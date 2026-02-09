@@ -569,6 +569,189 @@ pipekit cache-key composite linux amd64 "$(pipekit transform hash --file go.sum)
 
 ---
 
+### `config` - Environment Configuration
+
+Resolve environment-specific configuration from structured maps. Replaces the ~80 lines of bash typically needed for environment mapping in CI workflows.
+
+<details>
+<summary><strong>resolve</strong> - Resolve config with alias support</summary>
+
+```sh
+# Given a config file with dev/staging/production keys:
+pipekit config resolve envs.json --env prod --to-github
+# Normalizes "prod" → "production", exports all values to $GITHUB_ENV
+
+# From stdin
+echo '{"dev": {"project_id": "my-dev"}, "production": {"project_id": "my-prod"}}' \
+  | pipekit config resolve --env develop --uppercase-keys
+# "develop" → "dev", outputs: export PROJECT_ID="my-dev"
+
+# YAML config
+pipekit config resolve envs.yaml --env staging --format yaml --to-github-output
+
+# With custom aliases
+pipekit config resolve envs.json --env preview \
+  --aliases '{"preview": "staging", "canary": "production"}'
+
+# Output as compact JSON
+pipekit config resolve envs.json --env prod --json
+# {"project_id":"my-prod","region":"eu-west1"}
+```
+
+**Built-in aliases:** `dev`/`develop`/`development`/`test`/`testing` → `dev`, `stage`/`staging` → `staging`, `prod`/`production` → `production`
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--env, -e` | Environment name (required) |
+| `--format, -f` | Config format: `json`, `yaml` (default: json) |
+| `--aliases` | Custom aliases as JSON |
+| `--json` | Output as compact JSON instead of key-value pairs |
+| `--uppercase-keys, -u` | Convert keys to UPPER_SNAKE_CASE |
+| `--prefix, -p` | Add prefix to all keys |
+| `--to-github` | Write to `$GITHUB_ENV` |
+| `--to-github-output` | Write to `$GITHUB_OUTPUT` |
+
+</details>
+
+<details>
+<summary><strong>branch-env</strong> - Map branches to environments</summary>
+
+```sh
+# Map current branch to an environment
+pipekit config branch-env main --mapping '{"main":"production","develop":"dev","release/*":"staging"}'
+# production
+
+# Works with refs/heads/ prefix (auto-stripped)
+pipekit config branch-env refs/heads/release/v1.2.0 \
+  --mapping '{"main":"production","release/*":"staging"}'
+# staging
+
+# Auto-detect from $GITHUB_REF
+pipekit config branch-env --mapping '{"main":"production","develop":"dev"}' --to-github
+# Writes TARGET_ENV=production to $GITHUB_ENV
+
+# Custom output key
+pipekit config branch-env develop --mapping '{"develop":"dev"}' \
+  --output-key DEPLOY_ENV --to-github-output
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--mapping, -m` | Branch-to-env JSON mapping (required) |
+| `--output-key` | Output variable name (default: `TARGET_ENV`) |
+| `--to-github` | Write to `$GITHUB_ENV` |
+| `--to-github-output` | Write to `$GITHUB_OUTPUT` |
+
+</details>
+
+---
+
+### `parse` - Structured Data Extraction
+
+Extract code blocks and structured data from markdown text. Useful for parsing GitHub issue bodies, PR comments, and other markdown sources in CI workflows.
+
+<details>
+<summary><strong>extract-block</strong> - Extract fenced code blocks</summary>
+
+```sh
+# Extract all code blocks as JSON
+echo "$ISSUE_BODY" | pipekit parse extract-block
+# [{"language":"yaml","content":"foo: bar","index":0},{"language":"json","content":"{...}","index":1}]
+
+# Filter by language
+echo "$COMMENT" | pipekit parse extract-block --language yaml
+# Only yaml blocks
+
+# Get raw content of a specific block
+echo "$COMMENT" | pipekit parse extract-block --language python --index 0 --content-only
+# print("hello")
+
+# Write first block to GITHUB_OUTPUT
+echo "$ISSUE_BODY" | pipekit parse extract-block --language yaml --to-github-output
+```
+
+Supports both `` ``` `` and `~~~` fences, with any language tag (yaml, json, python, bash, etc.).
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--language, -l` | Filter by language tag (case-insensitive) |
+| `--index, -i` | Return only the Nth block (0-based) |
+| `--content-only` | Output raw content without JSON wrapping |
+| `--to-github-output` | Write content to `$GITHUB_OUTPUT` |
+| `--output-key` | Variable name for `--to-github-output` (default: `PARSED_BLOCK`) |
+
+</details>
+
+<details>
+<summary><strong>extract-yaml</strong> - Extract and parse YAML blocks</summary>
+
+```sh
+# Parse YAML blocks from an issue body
+echo "$ISSUE_BODY" | pipekit parse extract-yaml
+# [{"env":"production","replicas":3}]
+
+# Export parsed values as env vars
+echo "$ISSUE_BODY" | pipekit parse extract-yaml --to-github -u
+# Writes UPPER_SNAKE_CASE keys to $GITHUB_ENV
+
+# Get a specific YAML block
+echo "$COMMENT" | pipekit parse extract-yaml --index 0
+
+# Write to GITHUB_OUTPUT as JSON
+echo "$ISSUE_BODY" | pipekit parse extract-yaml --to-github-output
+```
+
+Matches blocks tagged as `yaml`, `yml`, or untagged blocks that parse as valid YAML. Invalid YAML blocks are silently skipped.
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--index, -i` | Return only the Nth YAML block (0-based) |
+| `--to-env` | Export top-level keys as shell export statements |
+| `--to-github` | Write top-level keys to `$GITHUB_ENV` |
+| `--to-github-output` | Write parsed JSON to `$GITHUB_OUTPUT` |
+| `--uppercase-keys, -u` | Convert keys to UPPER_SNAKE_CASE |
+| `--output-key` | Variable name for `--to-github-output` (default: `PARSED_YAML`) |
+
+</details>
+
+---
+
+### `transform slug` - URL-safe Slug Generation
+
+Generate URL-safe slugs from branch names or arbitrary strings. Useful for preview deployment names, Cloudflare Worker names, and unique resource identifiers.
+
+<details>
+<summary><strong>Examples</strong></summary>
+
+```sh
+# Branch name to slug
+echo "feature/my-cool-feature" | pipekit transform slug
+# feature-my-cool-feature
+
+# Strips refs/heads/ automatically
+echo "refs/heads/release/v1.2.3" | pipekit transform slug
+# release-v123
+
+# With max length (default: 63, matching k8s label limits)
+echo "feature/very-long-branch-name-that-exceeds-limits" | pipekit transform slug --max-length 20
+
+# With prefix
+echo "$GITHUB_HEAD_REF" | pipekit transform slug --prefix "preview-"
+# preview-feature-my-thing
+```
+
+</details>
+
+---
+
 ## Exit Codes
 
 | Code | Meaning |

@@ -11,7 +11,7 @@ This document provides structured context for AI assistants working with the pip
 | **CLI Framework** | `urfave/cli` v1 |
 | **Repository** | https://github.com/AxeForging/pipekit |
 | **License** | MIT |
-| **Commands** | 12 command groups, 40+ subcommands |
+| **Commands** | 14 command groups, 45+ subcommands |
 
 ---
 
@@ -27,7 +27,7 @@ pipekit/
 ├── actions/                         # CLI command handlers (one file per command group)
 │   ├── env.go                       # env from-json, from-yaml, from-dotenv, to-*
 │   ├── mask.go                      # mask values, file, github, env
-│   ├── transform.go                 # transform base64, url, case, regex, template, hash
+│   ├── transform.go                 # transform base64, url, case, regex, template, hash, slug
 │   ├── summary.go                   # summary github, table, badge, section
 │   ├── assert.go                    # assert env-exists, file-exists, json-path, semver, compare, url
 │   ├── matrix.go                    # matrix from-dirs, from-files, from-json, combine
@@ -36,11 +36,13 @@ pipekit/
 │   ├── diff.go                      # diff files, dirs, match, affected
 │   ├── version.go                   # version get, bump, compare, next
 │   ├── retry.go                     # retry run
-│   └── cache_key.go                 # cache-key from-files, from-glob, composite
+│   ├── cache_key.go                 # cache-key from-files, from-glob, composite
+│   ├── config.go                    # config resolve, branch-env
+│   └── parse.go                     # parse extract-block, extract-yaml
 ├── services/                        # Business logic (one file per domain)
 │   ├── env_service.go               # JSON/YAML/dotenv parsing, key transforms, GitHub/shell output
 │   ├── mask_service.go              # Pattern-based masking, GitHub ::add-mask::, env var matching
-│   ├── transform_service.go         # Base64, URL encoding, case conversion, regex, templates, hashing
+│   ├── transform_service.go         # Base64, URL encoding, case conversion, regex, templates, hashing, slug
 │   ├── summary_service.go           # Markdown tables, badges, collapsible sections, GITHUB_STEP_SUMMARY
 │   ├── assert_service.go            # Env/file existence, JSON path, semver validation, URL checks
 │   ├── matrix_service.go            # Dir/file/JSON matrix generation, Cartesian product
@@ -50,6 +52,8 @@ pipekit/
 │   ├── version_service.go           # Version extraction, bumping, comparison, conventional commits
 │   ├── retry_service.go             # Command execution with retries and backoff
 │   ├── cache_key_service.go         # SHA256 file hashing, glob matching, composite keys
+│   ├── config_service.go            # Env name normalization, config map resolution, branch-to-env mapping
+│   ├── parse_service.go             # Fenced code block extraction, YAML parsing from markdown
 │   └── *_service_test.go            # Unit tests for each service
 ├── domain/
 │   └── types.go                     # Shared types: KeyValue, NotifyMessage, DiffConfig, WaitResult
@@ -82,7 +86,7 @@ Key design principle: **actions handle CLI concerns** (flags, stdin, exit codes)
 |---------|---------------|-------|
 | `env_service.go` | `ParseJSON()`, `ParseYAML()`, `ParseDotenv()`, `TransformKeys()`, `WriteToShell()`, `WriteToGitHubEnv()` | Uses `gojq` for filter expressions, handles multiline GitHub env syntax |
 | `mask_service.go` | `MaskValues()`, `MaskFile()`, `MaskGitHub()`, `MaskEnvVars()` | Compiled regex patterns, partial masking support |
-| `transform_service.go` | `Base64Encode/Decode()`, `URLEncode/Decode()`, `ConvertCase()`, `RegexReplace()`, `RenderTemplate()`, `HashData()` | Word splitting handles camelCase boundaries |
+| `transform_service.go` | `Base64Encode/Decode()`, `URLEncode/Decode()`, `ConvertCase()`, `RegexReplace()`, `RenderTemplate()`, `HashData()`, `Slugify()` | Word splitting handles camelCase boundaries, slugify strips refs/heads/ |
 | `summary_service.go` | `AppendToGitHubSummary()`, `GenerateTable()`, `GenerateBadge()`, `GenerateSection()` | Reads `$GITHUB_STEP_SUMMARY` path from env |
 | `assert_service.go` | `AssertEnvExists()`, `AssertFileExists()`, `AssertJSONPath()`, `AssertSemver()`, `AssertSemverCompare()`, `AssertURL()` | Uses `gojq` for JSON path, `Masterminds/semver` for version validation |
 | `matrix_service.go` | `MatrixFromDirs()`, `MatrixFromFiles()`, `MatrixFromJSON()`, `MatrixCombine()` | Output is GitHub Actions `fromJSON()`-compatible |
@@ -92,6 +96,8 @@ Key design principle: **actions handle CLI concerns** (flags, stdin, exit codes)
 | `version_service.go` | `VersionGet()`, `VersionBump()`, `VersionCompare()`, `VersionNext()` | Auto-detects package.json, Cargo.toml, pyproject.toml, Chart.yaml, VERSION, etc. |
 | `retry_service.go` | `RetryRun()` | Configurable exit code filtering |
 | `cache_key_service.go` | `CacheKeyFromFiles()`, `CacheKeyFromGlob()`, `CacheKeyComposite()` | SHA256-based, deterministic |
+| `config_service.go` | `NormalizeEnvName()`, `ResolveConfig()`, `ResolveConfigJSON()`, `BranchToEnv()` | Built-in env aliases, custom alias support, glob branch matching |
+| `parse_service.go` | `ExtractCodeBlocks()`, `ExtractAndParseYAML()`, `FormatCodeBlocksJSON()`, `FormatParsedYAMLJSON()` | Supports ``` and ~~~ fences, language filtering, case-insensitive |
 
 ---
 
@@ -165,6 +171,8 @@ go tool cover -func=coverage.out
 | `services/matrix_service_test.go` | Dir/file matrix, JSON filtering, Cartesian product |
 | `services/version_service_test.go` | Version extraction from multiple file formats, bump, compare |
 | `services/cache_key_service_test.go` | File hashing, glob matching, composite keys, determinism |
+| `services/config_service_test.go` | Env name normalization, config resolution (JSON/YAML), branch-to-env mapping |
+| `services/parse_service_test.go` | Code block extraction, language filtering, YAML parsing from markdown |
 
 ---
 

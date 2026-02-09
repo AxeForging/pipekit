@@ -182,3 +182,39 @@ func toKebabCase(words []string) string {
 	}
 	return strings.Join(lower, "-")
 }
+
+// slugNonAlphaNum matches any character that isn't a-z, 0-9, or hyphen.
+var slugNonAlphaNum = regexp.MustCompile(`[^a-z0-9-]+`)
+
+// slugMultiHyphen collapses multiple consecutive hyphens.
+var slugMultiHyphen = regexp.MustCompile(`-{2,}`)
+
+// Slugify converts a string (typically a branch name) into a URL-safe slug.
+// It lowercases, replaces non-alphanumeric chars with hyphens, trims,
+// and optionally truncates to maxLen.
+func Slugify(input string, maxLen int) string {
+	s := strings.ToLower(strings.TrimSpace(input))
+
+	// Remove refs/heads/ prefix common in CI
+	s = strings.TrimPrefix(s, "refs/heads/")
+
+	// Replace slashes and underscores with hyphens
+	s = strings.ReplaceAll(s, "/", "-")
+	s = strings.ReplaceAll(s, "_", "-")
+
+	// Remove all other non-alphanumeric characters (except hyphen)
+	s = slugNonAlphaNum.ReplaceAllString(s, "")
+
+	// Collapse multiple hyphens
+	s = slugMultiHyphen.ReplaceAllString(s, "-")
+
+	// Trim leading/trailing hyphens
+	s = strings.Trim(s, "-")
+
+	if maxLen > 0 && len(s) > maxLen {
+		s = s[:maxLen]
+		s = strings.TrimRight(s, "-") // don't end on a hyphen after truncation
+	}
+
+	return s
+}

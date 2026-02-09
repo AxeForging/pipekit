@@ -150,6 +150,26 @@ func TransformCommand() cli.Command {
 				},
 			},
 			{
+				Name:  "slug",
+				Usage: "generate a URL-safe slug from a string (e.g. branch name)",
+				Flags: []cli.Flag{
+					cli.IntFlag{Name: "max-length", Value: 63, Usage: "maximum slug length (0 = unlimited)"},
+					cli.StringFlag{Name: "prefix", Usage: "prepend a prefix to the slug"},
+				},
+				Action: func(c *cli.Context) error {
+					data, err := readValueOrStdin(c)
+					if err != nil {
+						return err
+					}
+					slug := services.Slugify(strings.TrimSpace(string(data)), c.Int("max-length"))
+					if prefix := c.String("prefix"); prefix != "" {
+						slug = prefix + slug
+					}
+					fmt.Println(slug)
+					return nil
+				},
+			},
+			{
 				Name:  "hash",
 				Usage: "compute hash of a value, file, or stdin",
 				Flags: []cli.Flag{

@@ -1,0 +1,90 @@
+# GoReleaser configuration for pipekit
+# See https://goreleaser.com/customization/ for more details
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+      - 386
+      - arm
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X main.BuildTime={{.Date}}
+      - -X main.GitCommit={{.FullCommit}}
+    binary: pipekit-{{.OS}}-{{.Arch}}
+    ignore:
+      - goos: windows
+        goarch: arm
+
+archives:
+  - format: tar.gz
+    name_template: "pipekit-{{.OS}}-{{.Arch}}"
+    files:
+      - README.md
+      - LICENSE
+    format_overrides:
+      - goos: windows
+        format: zip
+        name_template: "pipekit-{{.OS}}-{{.Arch}}"
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+release:
+  github:
+    owner: AxeForging
+    name: pipekit
+  draft: false
+  prerelease: auto
+  name_template: "Release {{ .Tag }}"
+  footer: |
+    ## Installation
+
+    ### Linux/macOS (AMD64)
+    ```bash
+    curl -L https://github.com/AxeForging/pipekit/releases/download/{{ .Tag }}/pipekit-linux-amd64.tar.gz -o pipekit-linux-amd64.tar.gz
+    tar -xvf pipekit-linux-amd64.tar.gz pipekit-linux-amd64
+    chmod +x pipekit-linux-amd64
+    sudo mv pipekit-linux-amd64 /usr/local/bin/pipekit
+    ```
+
+    ### Linux/macOS (ARM64)
+    ```bash
+    curl -L https://github.com/AxeForging/pipekit/releases/download/{{ .Tag }}/pipekit-linux-arm64.tar.gz -o pipekit-linux-arm64.tar.gz
+    tar -xvf pipekit-linux-arm64.tar.gz pipekit-linux-arm64
+    chmod +x pipekit-linux-arm64
+    sudo mv pipekit-linux-arm64 /usr/local/bin/pipekit
+    ```
+
+    ### Windows
+    ```powershell
+    Invoke-WebRequest -Uri https://github.com/AxeForging/pipekit/releases/download/{{ .Tag }}/pipekit-windows-amd64.zip -OutFile pipekit-windows-amd64.zip
+    Expand-Archive -Path pipekit-windows-amd64.zip -DestinationPath .
+    Move-Item -Path pipekit-windows-amd64/pipekit-windows-amd64.exe -Destination pipekit.exe
+    ```
+
+    ### From Source
+    ```bash
+    go install github.com/AxeForging/pipekit@{{ .Tag }}
+    ```

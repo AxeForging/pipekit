@@ -38,6 +38,8 @@ func main() {
 		actions.VersionCommand(),
 		actions.RetryCommand(),
 		actions.CacheKeyCommand(),
+		actions.ConfigCommand(),
+		actions.ParseCommand(),
 		{
 			Name:  "build-info",
 			Usage: "show build version information",

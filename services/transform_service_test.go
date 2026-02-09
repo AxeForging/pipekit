@@ -117,6 +117,39 @@ func TestHashData_Unsupported(t *testing.T) {
 	}
 }
 
+func TestSlugify(t *testing.T) {
+	tests := []struct {
+		input    string
+		maxLen   int
+		expected string
+	}{
+		{"feature/my-cool-feature", 0, "feature-my-cool-feature"},
+		{"refs/heads/feature/test", 0, "feature-test"},
+		{"Feature/UPPER_case", 0, "feature-upper-case"},
+		{"release/v1.2.3", 0, "release-v123"},
+		{"my---branch___name", 0, "my-branch-name"},
+		{"  --leading-trailing--  ", 0, "leading-trailing"},
+		{"feature/long-branch-name-that-exceeds", 20, "feature-long-branch"},
+		{"hello@world#special!chars", 0, "helloworldspecialchars"},
+		{"simple", 0, "simple"},
+		{"", 0, ""},
+	}
+	for _, tc := range tests {
+		result := Slugify(tc.input, tc.maxLen)
+		if result != tc.expected {
+			t.Errorf("Slugify(%q, %d) = %q, expected %q", tc.input, tc.maxLen, result, tc.expected)
+		}
+	}
+}
+
+func TestSlugify_TruncationNoTrailingHyphen(t *testing.T) {
+	// When truncation would leave a trailing hyphen, it should be trimmed
+	result := Slugify("abc-defgh", 4)
+	if strings.HasSuffix(result, "-") {
+		t.Errorf("slug should not end with hyphen, got %q", result)
+	}
+}
+
 func TestSplitWords(t *testing.T) {
 	tests := []struct {
 		input    string

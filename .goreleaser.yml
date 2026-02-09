@@ -1,5 +1,6 @@
 # GoReleaser configuration for pipekit
 # See https://goreleaser.com/customization/ for more details
+version: 2
 
 before:
   hooks:
@@ -36,7 +37,6 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
-        name_template: "pipekit-{{.OS}}-{{.Arch}}"
 
 checksum:
   name_template: 'checksums.txt'

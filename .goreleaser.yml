@@ -23,26 +23,28 @@ builds:
       - -X main.Version={{.Version}}
       - -X main.BuildTime={{.Date}}
       - -X main.GitCommit={{.FullCommit}}
-    binary: pipekit-{{.OS}}-{{.Arch}}
+    binary: pipekit-{{.Os}}-{{.Arch}}
     ignore:
       - goos: windows
         goarch: arm
 
 archives:
-  - format: tar.gz
-    name_template: "pipekit-{{.OS}}-{{.Arch}}"
+  - formats:
+      - tar.gz
+    name_template: "pipekit-{{.Os}}-{{.Arch}}"
     files:
       - README.md
       - LICENSE
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 checksum:
   name_template: 'checksums.txt'
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc

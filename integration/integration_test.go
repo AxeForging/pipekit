@@ -208,15 +208,198 @@ func TestE2E_VersionSetDoesNotRewriteDeps(t *testing.T) {
 	}
 }
 
-func TestE2E_DiffDoubleStarGlobNote(t *testing.T) {
-	// We don't have a git repo here; just smoke-test that the command runs
-	// and emits a help-like signal for invalid args. Full diff matching is
-	// covered in services unit tests.
-	_, stderr, code := runPipekit(t, []string{"diff", "match"}, "")
-	if code == 0 {
-		t.Error("expected non-zero exit without args")
+// Regression: README claimed `api/**` worked but filepath.Match never
+// supported it. Build a real git repo in a tempdir, change a deep file,
+// and verify `diff match "api/**"` exits 0.
+func TestE2E_DiffDoubleStarGlobActuallyMatches(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
 	}
-	_ = stderr // helpful in failure mode
+	dir := t.TempDir()
+	mustRunIn(t, dir, "git", "init", "-q")
+	mustRunIn(t, dir, "git", "config", "user.email", "test@example.com")
+	mustRunIn(t, dir, "git", "config", "user.name", "test")
+	mustRunIn(t, dir, "git", "config", "commit.gpgsign", "false")
+
+	// Initial commit with one root file.
+	os.WriteFile(filepath.Join(dir, "README.md"), []byte("hi"), 0644)
+	mustRunIn(t, dir, "git", "add", ".")
+	mustRunIn(t, dir, "git", "commit", "-q", "-m", "init")
+
+	base := strings.TrimSpace(captureRunIn(t, dir, "git", "rev-parse", "HEAD"))
+
+	// Change a deep file under api/.
+	apiDir := filepath.Join(dir, "api", "v1")
+	os.MkdirAll(apiDir, 0755)
+	os.WriteFile(filepath.Join(apiDir, "handler.go"), []byte("package v1"), 0644)
+	mustRunIn(t, dir, "git", "add", ".")
+	mustRunIn(t, dir, "git", "commit", "-q", "-m", "deep change")
+
+	// `diff match api/**` should exit 0 (match found).
+	cmd := exec.Command(binaryPath(t), "diff", "match", "api/**", "--base", base)
+	cmd.Dir = dir
+	var so, se bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &so, &se
+	err := cmd.Run()
+	if err != nil {
+		t.Fatalf("diff match api/** should exit 0, got err=%v\nstdout=%s\nstderr=%s", err, so.String(), se.String())
+	}
+
+	// And `diff match nope/**` should exit non-zero.
+	cmd2 := exec.Command(binaryPath(t), "diff", "match", "nope/**", "--base", base)
+	cmd2.Dir = dir
+	cmd2.Stdout, cmd2.Stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	if err := cmd2.Run(); err == nil {
+		t.Error("expected non-zero exit for non-matching glob")
+	}
+}
+
+func TestE2E_RenderOutputFile(t *testing.T) {
+	dir := t.TempDir()
+	tmpl := filepath.Join(dir, "v.tpl")
+	out := filepath.Join(dir, "out.yaml")
+	os.WriteFile(tmpl, []byte(`tag: {{ .Values.tag }}`), 0644)
+
+	_, _, code := runPipekit(t,
+		[]string{"render", tmpl, "--set", "tag=v9", "--output", out}, "")
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("output file not written: %v", err)
+	}
+	if !strings.Contains(string(got), "tag: v9") {
+		t.Errorf("output mismatch: %s", got)
+	}
+}
+
+func TestE2E_ExecTeeWritesFile(t *testing.T) {
+	dir := t.TempDir()
+	teeFile := filepath.Join(dir, "out.log")
+
+	_, _, code := runPipekit(t,
+		[]string{"exec", "--tee", teeFile, "--", "sh", "-c", "echo line1; echo line2 1>&2"}, "")
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	got, err := os.ReadFile(teeFile)
+	if err != nil {
+		t.Fatalf("tee file not written: %v", err)
+	}
+	out := string(got)
+	if !strings.Contains(out, "line1") || !strings.Contains(out, "line2") {
+		t.Errorf("tee did not capture both streams: %q", out)
+	}
+}
+
+func TestE2E_MaskMultilinePEM(t *testing.T) {
+	pem := `before
+-----BEGIN PRIVATE KEY-----
+secret-body-1
+secret-body-2
+-----END PRIVATE KEY-----
+after`
+
+	stdout, _, code := runPipekit(t,
+		[]string{"mask", "values", "--preset", "gcp", "--multiline"}, pem)
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if strings.Contains(stdout, "secret-body-1") {
+		t.Errorf("PEM body leaked: %s", stdout)
+	}
+	if !strings.Contains(stdout, "before") || !strings.Contains(stdout, "after") {
+		t.Errorf("non-secret content lost: %s", stdout)
+	}
+}
+
+func TestE2E_MatrixShard(t *testing.T) {
+	stdout, _, code := runPipekit(t,
+		[]string{"matrix", "shard", "--total", "3", "--index", "1", "a", "b", "c", "d", "e", "f"}, "")
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	want := "b\ne\n"
+	if strings.TrimSpace(stdout) != strings.TrimSpace(want) {
+		t.Errorf("got %q, want %q", stdout, want)
+	}
+}
+
+func TestE2E_CacheKeyWithEnv(t *testing.T) {
+	dir := t.TempDir()
+	lock := filepath.Join(dir, "lock")
+	os.WriteFile(lock, []byte("contents"), 0644)
+
+	a, _, _ := runPipekit(t,
+		[]string{"cache-key", "from-files", lock, "--with-env", "PIPEKIT_TEST", "--length", "16"},
+		"", "PIPEKIT_TEST=v1")
+	b, _, _ := runPipekit(t,
+		[]string{"cache-key", "from-files", lock, "--with-env", "PIPEKIT_TEST", "--length", "16"},
+		"", "PIPEKIT_TEST=v2")
+
+	if strings.TrimSpace(a) == strings.TrimSpace(b) {
+		t.Errorf("cache keys should differ when --with-env value changes:\na=%s\nb=%s", a, b)
+	}
+	if len(strings.TrimSpace(a)) != 16 {
+		t.Errorf("--length 16 not applied: %q", a)
+	}
+}
+
+func TestE2E_ParseFrontmatter(t *testing.T) {
+	input := `---
+title: My Post
+draft: true
+---
+
+Body content.`
+	stdout, _, code := runPipekit(t,
+		[]string{"parse", "extract-frontmatter", "--json"}, input)
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(stdout, `"title"`) || !strings.Contains(stdout, "My Post") {
+		t.Errorf("frontmatter not parsed as JSON: %s", stdout)
+	}
+}
+
+func TestE2E_AssertPath(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "exists")
+	os.WriteFile(f, []byte("x"), 0644)
+
+	if _, _, code := runPipekit(t, []string{"assert", "path", f, dir}, ""); code != 0 {
+		t.Errorf("expected exit 0 for existing path/dir, got %d", code)
+	}
+	if _, _, code := runPipekit(t, []string{"assert", "path", filepath.Join(dir, "missing")}, ""); code == 0 {
+		t.Error("expected non-zero for missing path")
+	}
+}
+
+// Helpers for git-driven tests.
+func mustRunIn(t *testing.T, dir, name string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	var se bytes.Buffer
+	cmd.Stderr = &se
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("%s %v: %v\n%s", name, args, err, se.String())
+	}
+}
+
+func captureRunIn(t *testing.T, dir, name string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	var so bytes.Buffer
+	cmd.Stdout = &so
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("%s %v: %v", name, args, err)
+	}
+	return so.String()
 }
 
 func TestE2E_URLParse(t *testing.T) {

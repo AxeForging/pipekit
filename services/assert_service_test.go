@@ -97,3 +97,35 @@ func TestAssertSemverCompare(t *testing.T) {
 		}
 	}
 }
+
+func TestAssertPath_FileAndDir(t *testing.T) {
+	dir := t.TempDir()
+	subdir := dir + "/sub"
+	os.Mkdir(subdir, 0755)
+	file := dir + "/f"
+	os.WriteFile(file, []byte("x"), 0644)
+
+	if err := AssertPath([]string{file, subdir, dir}); err != nil {
+		t.Errorf("expected all paths exist, got: %v", err)
+	}
+	if err := AssertPath([]string{dir + "/missing"}); err == nil {
+		t.Error("expected missing-path error")
+	}
+}
+
+func TestAssertDirNotEmpty(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := AssertDirNotEmpty(dir); err == nil {
+		t.Error("expected error for empty dir")
+	}
+
+	os.WriteFile(dir+"/f", []byte("x"), 0644)
+	if err := AssertDirNotEmpty(dir); err != nil {
+		t.Errorf("expected non-empty, got: %v", err)
+	}
+
+	if err := AssertDirNotEmpty("/non/existent/path"); err == nil {
+		t.Error("expected error for missing dir")
+	}
+}

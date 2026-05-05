@@ -80,6 +80,18 @@ Same flag set as `from-json`.
 </details>
 
 <details>
+<summary><strong><code>env from-toml</code></strong> — parse TOML (Cargo, pyproject, etc.)</summary>
+
+```sh
+pipekit env from-toml Cargo.toml --flatten --uppercase-keys --to-github
+pipekit env from-toml pyproject.toml --filter '.tool.poetry' --flatten --to-github
+```
+
+Same flag set as `from-json`. Closes the Cargo / pyproject gap.
+
+</details>
+
+<details>
 <summary><strong><code>env from-dotenv</code></strong> — parse <code>.env</code> files</summary>
 
 ```sh
@@ -123,6 +135,12 @@ Prevent secrets from leaking in logs.
 # Mask patterns in a stream
 some-command | pipekit mask values --pattern "sk-.*" --pattern "password=.*"
 
+# Use built-in presets for common secret formats
+some-command | pipekit mask values --preset "aws,github,jwt"
+
+# Cross-line patterns (PEM keys, multi-line JWTs)
+cat output.log | pipekit mask values --preset "gcp,pem" --multiline
+
 # Partial masking (show first/last 3 chars)
 echo "sk-1234567890xf" | pipekit mask values --pattern "sk-.*" --partial 3
 # sk-***0xf
@@ -136,6 +154,8 @@ pipekit mask github "$SECRET_VALUE"
 # Mask all env vars matching glob patterns
 pipekit mask env --env-match "*_SECRET,*_TOKEN,*_KEY" --github
 ```
+
+**Presets:** `aws`, `github`, `gcp`, `jwt`, `slack`, `stripe`, `pem`. Combine via comma: `--preset aws,github`. Use `--multiline` for patterns that need to match across newlines (the default line-by-line scanner won't see them).
 
 </details>
 
@@ -283,6 +303,12 @@ pipekit assert compare 2.0.0 gt 1.5.0
 
 # URL returns one of the expected statuses
 pipekit assert url https://api.example.com/health --expected-status 200,204
+
+# Path exists (file or directory)
+pipekit assert path /etc/myapp/config.yaml /var/lib/myapp
+
+# Directory exists and contains entries
+pipekit assert dir-not-empty ./build/output
 ```
 
 Comparison operators: `gt`, `lt`, `eq`, `gte`, `lte` (and `>`, `<`, `==`, `>=`, `<=`).
@@ -313,7 +339,16 @@ pipekit matrix combine --set "os=linux,darwin" --set "arch=amd64,arm64"
 # Filter a JSON array of objects
 cat services.json | pipekit matrix from-json --key service \
   --filter-field deploy --filter-value true
+
+# Test sharding — run shard 1 of 4 in parallel jobs
+pipekit matrix shard --total 4 --index 1 \
+  $(go test -list . ./... | tail -n +2)
+# Or read items from stdin
+go test -list . ./... | tail -n +2 \
+  | pipekit matrix shard --total 4 --index 1 --from-stdin-lines
 ```
+
+`shard` outputs in `list` format by default (one per line). Use `--format csv` or `--format json` for other shapes.
 
 </details>
 
@@ -455,6 +490,10 @@ pipekit version compare 2.0.0 1.5.0
 
 # Next version from conventional commits since the last tag
 pipekit version next --to-github-output version
+
+# Set an explicit version (replaces only the version literal in the right
+# field — never rewrites a dep pin that happens to share the value)
+pipekit version set 1.5.0 --source package.json
 ```
 
 **Auto-detected files:** `package.json`, `Cargo.toml`, `pyproject.toml`, `Chart.yaml`, `VERSION`, `version.txt`, `setup.py`, `build.gradle`, `pom.xml`.
@@ -499,6 +538,14 @@ Generate deterministic cache keys from files or directories.
 pipekit cache-key from-files go.sum --prefix "go-mod-linux-" --to-github-output cache_key
 # go-mod-linux-a1b2c3d4...
 
+# Hash + mix in env values (e.g. tool versions) — key changes when env changes
+pipekit cache-key from-files go.sum \
+  --with-env "GO_VERSION,RUNNER_OS" --length 16 --prefix "go-"
+# go-a1b2c3d4e5f60718
+
+# Truncate the hash output to N hex chars
+pipekit cache-key from-files go.sum --length 8
+
 # Hash everything matching a glob
 pipekit cache-key from-glob "**/*.lock" --prefix "deps-"
 
@@ -506,6 +553,11 @@ pipekit cache-key from-glob "**/*.lock" --prefix "deps-"
 pipekit cache-key composite linux amd64 "$(pipekit transform hash --file go.sum)" --prefix "go-"
 # go-linux-amd64-a1b2c3d4...
 ```
+
+| Flag | On | Description |
+|---|---|---|
+| `--with-env` | `from-files` | Comma-separated env var names to mix into the hash (sorted, deterministic) |
+| `--length` | `from-files` | Truncate hex output to N chars (0 = full) |
 
 </details>
 
@@ -642,6 +694,27 @@ echo "$ISSUE_BODY" | pipekit parse extract-yaml --to-github-output
 ```
 
 Matches blocks tagged `yaml`, `yml`, or untagged blocks that parse as valid YAML. Invalid YAML blocks are silently skipped.
+
+</details>
+
+<details>
+<summary><strong><code>parse extract-frontmatter</code></strong> — pull leading YAML / TOML frontmatter</summary>
+
+```sh
+# Extract the raw YAML body
+pipekit parse extract-frontmatter post.md
+# title: My Post
+# draft: true
+
+# As JSON (parses YAML or TOML automatically)
+pipekit parse extract-frontmatter post.md --json
+# {"title":"My Post","draft":true}
+
+# Top-level keys straight to $GITHUB_ENV (UPPER_SNAKE_CASE optional)
+pipekit parse extract-frontmatter post.md --to-github -u
+```
+
+Supports both `--- ... ---` (YAML) and `+++ ... +++` (TOML) delimiters. Common in Hugo / Jekyll content, issue templates, and notebook headers.
 
 | Flag | Description |
 |---|---|

@@ -93,12 +93,13 @@ If a `--to-github*` flag is used outside a GitHub Actions runner, the command ex
 
 | Format | Parser | Used by |
 |---|---|---|
-| JSON | `encoding/json` | `env from-json`, `config resolve`, `assert json-path`, `summary table`, `matrix from-json`, `parse extract-yaml` |
-| YAML | `gopkg.in/yaml.v3` | `env from-yaml`, `config resolve`, `parse extract-yaml`, `diff` config file (`.pipekit-diff.yaml`) |
+| JSON | `encoding/json` | `env from-json`, `config resolve`, `assert json-path`, `summary table`, `matrix from-json`, `parse extract-yaml`, `json *`, `yaml *`, `render --values` |
+| YAML | `gopkg.in/yaml.v3` | `env from-yaml`, `config resolve`, `parse extract-yaml`, `parse extract-frontmatter`, `yaml *`, `json *` (when input is `.yaml`/`.yml`), `render --values`, `diff` config file (`.pipekit-diff.yaml`) |
+| TOML | `pelletier/go-toml/v2` | `env from-toml`, `json convert --to toml`, `yaml *` (when input is `.toml`), `render --values`, `parse extract-frontmatter` (`+++` delimiter) |
 | dotenv | built-in line parser | `env from-dotenv` |
-| CSV | `encoding/csv` | `summary table` |
-| Markdown | regex-based fenced-block extraction | `parse extract-block`, `parse extract-yaml` |
-| Version files | per-format regex | `version get/bump`: `package.json`, `Cargo.toml`, `pyproject.toml`, `Chart.yaml`, `setup.py`, `build.gradle`, `pom.xml`, `VERSION`, `version.txt` |
+| CSV | `encoding/csv` | `summary table`, `json convert --to csv` / `--from csv` |
+| Markdown | regex-based fenced-block extraction | `parse extract-block`, `parse extract-yaml`, `parse extract-frontmatter` |
+| Version files | per-format regex | `version get/bump/set`: `package.json`, `Cargo.toml`, `pyproject.toml`, `Chart.yaml`, `setup.py`, `build.gradle`, `pom.xml`, `VERSION`, `version.txt` |
 
 ---
 

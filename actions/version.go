@@ -72,6 +72,25 @@ func VersionCommand() cli.Command {
 				},
 			},
 			{
+				Name:      "set",
+				Usage:     "set an explicit version and write back",
+				ArgsUsage: "VERSION",
+				Flags: []cli.Flag{
+					cli.StringFlag{Name: "source, s", Value: "auto", Usage: "version file"},
+				},
+				Action: func(c *cli.Context) error {
+					v := c.Args().First()
+					if v == "" {
+						return cli.NewExitError("version required", 1)
+					}
+					if err := services.VersionSet(c.String("source"), v); err != nil {
+						return err
+					}
+					fmt.Println(v)
+					return nil
+				},
+			},
+			{
 				Name:      "compare",
 				Usage:     "compare two semver strings (exit: 0=eq, 1=gt, 2=lt)",
 				ArgsUsage: "V1 V2",

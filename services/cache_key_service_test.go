@@ -72,3 +72,83 @@ func TestCacheKeyComposite_DefaultSeparator(t *testing.T) {
 		t.Errorf("expected a-b-c, got %s", key)
 	}
 }
+
+func TestCacheKeyFromFilesWithOpts_Length(t *testing.T) {
+	tmpDir := t.TempDir()
+	f := filepath.Join(tmpDir, "lock")
+	os.WriteFile(f, []byte("contents"), 0644)
+
+	full, err := CacheKeyFromFilesWithOpts([]string{f}, CacheKeyOptions{})
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(full) != 64 {
+		t.Errorf("expected 64-char hex, got %d (%s)", len(full), full)
+	}
+
+	short, err := CacheKeyFromFilesWithOpts([]string{f}, CacheKeyOptions{Length: 16})
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(short) != 16 {
+		t.Errorf("expected 16-char truncated, got %d (%s)", len(short), short)
+	}
+	if full[:16] != short {
+		t.Errorf("truncated key should be prefix of full: %s vs %s", short, full)
+	}
+}
+
+func TestCacheKeyFromFilesWithOpts_WithEnvChangesHash(t *testing.T) {
+	tmpDir := t.TempDir()
+	f := filepath.Join(tmpDir, "lock")
+	os.WriteFile(f, []byte("same content"), 0644)
+
+	t.Setenv("PIPEKIT_TEST_VAR", "v1")
+	a, err := CacheKeyFromFilesWithOpts([]string{f}, CacheKeyOptions{
+		EnvVar: []string{"PIPEKIT_TEST_VAR"},
+	})
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	t.Setenv("PIPEKIT_TEST_VAR", "v2")
+	b, err := CacheKeyFromFilesWithOpts([]string{f}, CacheKeyOptions{
+		EnvVar: []string{"PIPEKIT_TEST_VAR"},
+	})
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+
+	if a == b {
+		t.Errorf("hash did not change when env var changed: %s", a)
+	}
+
+	// Same env, same hash.
+	t.Setenv("PIPEKIT_TEST_VAR", "v2")
+	bAgain, _ := CacheKeyFromFilesWithOpts([]string{f}, CacheKeyOptions{
+		EnvVar: []string{"PIPEKIT_TEST_VAR"},
+	})
+	if b != bAgain {
+		t.Errorf("hash should be stable with same env: %s vs %s", b, bAgain)
+	}
+}
+
+func TestCacheKeyFromFilesWithOpts_PrefixApplied(t *testing.T) {
+	tmpDir := t.TempDir()
+	f := filepath.Join(tmpDir, "lock")
+	os.WriteFile(f, []byte("x"), 0644)
+
+	got, err := CacheKeyFromFilesWithOpts([]string{f}, CacheKeyOptions{
+		Prefix: "go-mod-",
+		Length: 8,
+	})
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(got) != len("go-mod-")+8 {
+		t.Errorf("unexpected length: %s", got)
+	}
+	if got[:7] != "go-mod-" {
+		t.Errorf("prefix missing: %s", got)
+	}
+}

@@ -27,32 +27,12 @@ func WaitForURL(ctx context.Context, urlStr string, expectedCodes []int, expecte
 		}
 
 		attempt++
-		resp, err := client.Get(urlStr)
-		if err == nil {
-			defer resp.Body.Close()
-			codeMatch := false
-			for _, code := range expectedCodes {
-				if resp.StatusCode == code {
-					codeMatch = true
-					break
-				}
+		ready, err := tryURL(client, urlStr, expectedCodes, expectedBody)
+		if err == nil && ready {
+			if !quiet {
+				helpers.Log.Info().Msgf("URL %s is ready (attempt %d)", urlStr, attempt)
 			}
-			if codeMatch {
-				if expectedBody != "" {
-					body, _ := io.ReadAll(resp.Body)
-					if strings.Contains(string(body), expectedBody) {
-						if !quiet {
-							helpers.Log.Info().Msgf("URL %s is ready (attempt %d)", urlStr, attempt)
-						}
-						return nil
-					}
-				} else {
-					if !quiet {
-						helpers.Log.Info().Msgf("URL %s is ready (attempt %d)", urlStr, attempt)
-					}
-					return nil
-				}
-			}
+			return nil
 		}
 
 		if !quiet {
@@ -69,6 +49,35 @@ func WaitForURL(ctx context.Context, urlStr string, expectedCodes []int, expecte
 			delay = delay * 2
 		}
 	}
+}
+
+// tryURL performs one probe and always closes the response body before
+// returning, so the polling loop in WaitForURL doesn't leak connections.
+func tryURL(client *http.Client, urlStr string, expectedCodes []int, expectedBody string) (bool, error) {
+	resp, err := client.Get(urlStr)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	codeMatch := false
+	for _, code := range expectedCodes {
+		if resp.StatusCode == code {
+			codeMatch = true
+			break
+		}
+	}
+	if !codeMatch {
+		return false, nil
+	}
+	if expectedBody == "" {
+		return true, nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(string(body), expectedBody), nil
 }
 
 // WaitForTCP polls a TCP address until a connection can be established.

@@ -103,8 +103,52 @@ func MatrixCommand() cli.Command {
 					return outputMatrix(c, result)
 				},
 			},
+			{
+				Name:      "shard",
+				Usage:     "pick the N-th shard of items (for splitting test suites)",
+				ArgsUsage: "ITEM [ITEM...]",
+				Flags: []cli.Flag{
+					cli.IntFlag{Name: "total", Usage: "total number of shards (required)"},
+					cli.IntFlag{Name: "index", Usage: "0-based index of the shard to return (required)"},
+					cli.StringFlag{Name: "from-stdin-lines", Usage: "read items as newline-separated from stdin"},
+					cli.StringFlag{Name: "format", Value: "list", Usage: "output format: list (newlines), csv, json"},
+				},
+				Action: func(c *cli.Context) error {
+					if !c.IsSet("total") || !c.IsSet("index") {
+						return cli.NewExitError("--total and --index are required", 1)
+					}
+					var items []string
+					if c.Bool("from-stdin-lines") || c.IsSet("from-stdin-lines") {
+						data, err := readAllInput(c)
+						if err != nil {
+							return err
+						}
+						for _, l := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+							if l != "" {
+								items = append(items, l)
+							}
+						}
+					} else {
+						items = []string(c.Args())
+					}
+					out, err := services.MatrixShard(items, c.Int("total"), c.Int("index"))
+					if err != nil {
+						return err
+					}
+					return printList(out, c.String("format"))
+				},
+			},
 		},
 	}
+}
+
+func printList(items []string, format string) error {
+	out, err := services.FormatDiffOutput(items, format)
+	if err != nil {
+		return err
+	}
+	fmt.Println(out)
+	return nil
 }
 
 func outputMatrix(c *cli.Context, result string) error {

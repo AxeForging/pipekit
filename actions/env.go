@@ -65,6 +65,24 @@ func EnvCommand() cli.Command {
 				},
 			},
 			{
+				Name:  "from-toml",
+				Usage: "read TOML and export as env vars",
+				Flags: commonFlags,
+				Action: func(c *cli.Context) error {
+					r, err := getInputReader(c)
+					if err != nil {
+						return err
+					}
+
+					kvs, err := services.ParseTOML(r, c.Bool("flatten"), c.Int("depth"), c.String("filter"))
+					if err != nil {
+						return err
+					}
+
+					return processEnvOutput(c, kvs)
+				},
+			},
+			{
 				Name:  "from-dotenv",
 				Usage: "parse .env file and re-export",
 				Flags: commonFlags,

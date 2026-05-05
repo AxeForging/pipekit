@@ -6,7 +6,10 @@ toolchain go1.24.6
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
+	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/google/uuid v1.6.0
 	github.com/itchyny/gojq v0.12.18
+	github.com/pelletier/go-toml/v2 v2.3.1
 	github.com/rs/zerolog v1.34.0
 	github.com/urfave/cli v1.22.17
 	gopkg.in/yaml.v3 v3.0.1

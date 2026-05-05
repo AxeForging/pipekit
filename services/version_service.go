@@ -72,13 +72,79 @@ func VersionBump(source, bumpType, preRelease, buildMeta string) (string, error)
 		newVersion = newVersion + "+" + buildMeta
 	}
 
-	// Replace in file
-	newContent := strings.Replace(string(data), currentStr, newVersion, 1)
+	newContent, err := replaceVersionInFile(source, string(data), currentStr, newVersion)
+	if err != nil {
+		return "", err
+	}
 	if err := os.WriteFile(source, []byte(newContent), 0644); err != nil {
 		return "", fmt.Errorf("writing %s: %w", source, err)
 	}
 
 	return newVersion, nil
+}
+
+// VersionSet writes an explicit version into the file, replacing whatever's
+// currently there (according to the format's version regex).
+func VersionSet(source, newVersion string) error {
+	if source == "auto" {
+		source = autoDetectVersionFile()
+		if source == "" {
+			return fmt.Errorf("could not auto-detect version file")
+		}
+	}
+	data, err := os.ReadFile(source)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", source, err)
+	}
+	currentStr, err := extractVersion(source, string(data))
+	if err != nil {
+		return err
+	}
+	newContent, err := replaceVersionInFile(source, string(data), currentStr, newVersion)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(source, []byte(newContent), 0644)
+}
+
+// replaceVersionInFile rewrites only the version captured by the file's
+// matching regex — it does NOT use a naive strings.Replace, which can rewrite
+// the wrong line if the literal version appears elsewhere (e.g. as a dep pin).
+func replaceVersionInFile(filename, content, oldVer, newVer string) (string, error) {
+	re := matchingVersionRegex(filename)
+	if re == nil {
+		// Fall back to targeted replace via the first matching submatch.
+		for _, candidate := range versionPatterns {
+			if loc := candidate.FindStringSubmatchIndex(content); loc != nil && len(loc) >= 4 {
+				if content[loc[2]:loc[3]] == oldVer {
+					re = candidate
+					break
+				}
+			}
+		}
+	}
+	if re == nil {
+		return "", fmt.Errorf("could not locate version in %s", filename)
+	}
+	loc := re.FindStringSubmatchIndex(content)
+	if loc == nil || len(loc) < 4 {
+		return "", fmt.Errorf("could not locate version capture in %s", filename)
+	}
+	start, end := loc[2], loc[3]
+	if content[start:end] != oldVer {
+		return "", fmt.Errorf("captured version %q does not match expected %q in %s",
+			content[start:end], oldVer, filename)
+	}
+	return content[:start] + newVer + content[end:], nil
+}
+
+func matchingVersionRegex(filename string) *regexp.Regexp {
+	for name, re := range versionPatterns {
+		if strings.HasSuffix(filename, name) || strings.Contains(filename, name) {
+			return re
+		}
+	}
+	return nil
 }
 
 // VersionCompare compares two semver strings.

@@ -93,6 +93,30 @@ func ExtractAndParseYAML(r io.Reader) ([]map[string]interface{}, error) {
 	return results, nil
 }
 
+// frontmatterRegex matches a YAML or TOML frontmatter block at the very
+// start of the input. Supports `---` (YAML) and `+++` (TOML) delimiters.
+var frontmatterRegex = regexp.MustCompile(`(?s)\A(?:---|\+\+\+)\n(.+?)\n(?:---|\+\+\+)\s*\n?`)
+
+// ExtractFrontmatter pulls the leading frontmatter block out of input and
+// returns the raw bytes plus the format detected ("yaml" or "toml").
+// Returns nil if no frontmatter is present.
+func ExtractFrontmatter(r io.Reader) ([]byte, string, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, "", err
+	}
+	loc := frontmatterRegex.FindSubmatchIndex(data)
+	if loc == nil {
+		return nil, "", nil
+	}
+	body := data[loc[2]:loc[3]]
+	delim := string(data[loc[0]:loc[0]+3])
+	if delim == "+++" {
+		return body, "toml", nil
+	}
+	return body, "yaml", nil
+}
+
 // FormatCodeBlocksJSON returns extracted code blocks as a JSON array.
 func FormatCodeBlocksJSON(blocks []CodeBlock) (string, error) {
 	data, err := json.Marshal(blocks)

@@ -21,13 +21,19 @@ func CacheKeyCommand() cli.Command {
 				Flags: []cli.Flag{
 					cli.StringFlag{Name: "prefix", Usage: "prefix for the cache key"},
 					cli.StringFlag{Name: "to-github-output", Usage: "export to GITHUB_OUTPUT with this key"},
+					cli.StringFlag{Name: "with-env", Usage: "comma-separated env var names to mix into the key"},
+					cli.IntFlag{Name: "length", Usage: "truncate hash to N hex chars (0 = full)"},
 				},
 				Action: func(c *cli.Context) error {
 					files := c.Args()
 					if len(files) == 0 {
 						return cli.NewExitError("at least one file required", 1)
 					}
-					key, err := services.CacheKeyFromFiles(files, c.String("prefix"))
+					key, err := services.CacheKeyFromFilesWithOpts(files, services.CacheKeyOptions{
+						Prefix: c.String("prefix"),
+						Length: c.Int("length"),
+						EnvVar: splitCSV(c.String("with-env")),
+					})
 					if err != nil {
 						return err
 					}

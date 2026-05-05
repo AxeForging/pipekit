@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -137,4 +138,71 @@ func TestToUpperSnakeCase(t *testing.T) {
 			t.Errorf("toUpperSnakeCase(%q) = %q, expected %q", tc.input, result, tc.expected)
 		}
 	}
+}
+
+// Regression: arrays/objects should be JSON-encoded, not rendered with
+// Go's default %v formatting (which would leak "[a b c]" or "map[k:v]").
+func TestParseJSON_NonScalarValuesAreJSONEncoded(t *testing.T) {
+	input := `{"tags": ["a", "b", "c"], "meta": {"k": 1}, "scalar": "x", "n": 42, "b": true}`
+	kvs, err := ParseJSON(strings.NewReader(input), false, 0, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := map[string]string{}
+	for _, kv := range kvs {
+		got[kv.Key] = kv.Value
+	}
+	if got["tags"] != `["a","b","c"]` {
+		t.Errorf("tags: expected JSON array, got %q", got["tags"])
+	}
+	if got["meta"] != `{"k":1}` {
+		t.Errorf("meta: expected JSON object, got %q", got["meta"])
+	}
+	if got["scalar"] != "x" {
+		t.Errorf("scalar: expected raw, got %q", got["scalar"])
+	}
+	if got["n"] != "42" {
+		t.Errorf("n: expected 42, got %q", got["n"])
+	}
+	if got["b"] != "true" {
+		t.Errorf("b: expected true, got %q", got["b"])
+	}
+}
+
+// Regression: GitHub heredoc delimiter must not collide with the value.
+// Hardcoded "EOF_PIPEKIT" used to corrupt output for any value containing
+// that literal.
+func TestUniqueHeredocDelimiter_NoCollision(t *testing.T) {
+	// Even if the value pretends to be the legacy delimiter, a unique one
+	// must come back.
+	d, err := uniqueHeredocDelimiter("PIPEKIT_EOF_BADGUESS\nEOF_PIPEKIT\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains("PIPEKIT_EOF_BADGUESS\nEOF_PIPEKIT\n", d) {
+		t.Fatalf("delimiter %q collides with value", d)
+	}
+}
+
+func TestWriteToGitHubEnv_UniqueDelimiterPerCall(t *testing.T) {
+	tmpDir := t.TempDir()
+	envFile := tmpDir + "/env"
+	t.Setenv("GITHUB_ENV", envFile)
+
+	kvs := []domain.KeyValue{{Key: "MULTI", Value: "line1\nline2\nline3"}}
+	if err := WriteToGitHubEnv(kvs); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out, _ := readFile(envFile)
+	if !strings.Contains(out, "MULTI<<PIPEKIT_EOF_") {
+		t.Errorf("expected unique heredoc delimiter, got: %s", out)
+	}
+}
+
+func readFile(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }

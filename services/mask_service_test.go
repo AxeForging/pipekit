@@ -84,3 +84,50 @@ func TestMaskString(t *testing.T) {
 		}
 	}
 }
+
+func TestMaskValuesMultiline_PEMKey(t *testing.T) {
+	input := `before
+-----BEGIN PRIVATE KEY-----
+abcdef1234567890
+ghijkl1234567890
+-----END PRIVATE KEY-----
+after`
+	patterns, _ := PresetPatterns([]string{"gcp"})
+	var buf bytes.Buffer
+	if err := MaskValuesMultiline(strings.NewReader(input), &buf, patterns, "***", 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "abcdef1234567890") {
+		t.Errorf("PEM body not masked: %s", out)
+	}
+	if !strings.Contains(out, "before") || !strings.Contains(out, "after") {
+		t.Errorf("non-secret content lost: %s", out)
+	}
+}
+
+func TestMaskValues_LongLineDoesNotSilentlyTruncate(t *testing.T) {
+	// A single line longer than the legacy 1MB cap. Without the buffer fix
+	// scanner.Scan() would return false silently and skip the secret.
+	bigPad := strings.Repeat("x", 2*1024*1024)
+	input := bigPad + " token=ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + bigPad
+	patterns, _ := PresetPatterns([]string{"github"})
+	var buf bytes.Buffer
+	if err := MaskValues(strings.NewReader(input), &buf, patterns, "***", 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA") {
+		t.Error("token leaked through long-line input")
+	}
+}
+
+func TestPresetPatterns(t *testing.T) {
+	pats, unknown := PresetPatterns([]string{"aws", "github", "nope"})
+	if len(pats) == 0 {
+		t.Error("expected aws+github patterns")
+	}
+	if len(unknown) != 1 || unknown[0] != "nope" {
+		t.Errorf("expected unknown=[nope], got %v", unknown)
+	}
+}

@@ -9,6 +9,23 @@ import (
 	"github.com/urfave/cli"
 )
 
+// combinePatternFlags merges --pattern values with --preset patterns, erroring
+// on unknown presets and on the empty case.
+func combinePatternFlags(c *cli.Context) ([]string, error) {
+	patterns := append([]string{}, c.StringSlice("pattern")...)
+	if preset := c.String("preset"); preset != "" {
+		pats, unknown := services.PresetPatterns(splitCSV(preset))
+		if len(unknown) > 0 {
+			return nil, cli.NewExitError("unknown preset(s): "+strings.Join(unknown, ", "), 1)
+		}
+		patterns = append(patterns, pats...)
+	}
+	if len(patterns) == 0 {
+		return nil, cli.NewExitError("at least one --pattern or --preset is required", 1)
+	}
+	return patterns, nil
+}
+
 // MaskCommand returns the mask command group.
 func MaskCommand() cli.Command {
 	return cli.Command{
@@ -19,14 +36,19 @@ func MaskCommand() cli.Command {
 				Name:  "values",
 				Usage: "mask specific values in stdin stream",
 				Flags: []cli.Flag{
-					cli.StringSliceFlag{Name: "pattern", Usage: "regex pattern(s) to match values to mask"},
+					cli.StringSliceFlag{Name: "pattern", Usage: "regex pattern(s) to match values to mask (repeatable)"},
+					cli.StringFlag{Name: "preset", Usage: "comma-separated presets: aws,github,gcp,jwt,slack,stripe,pem"},
 					cli.StringFlag{Name: "replacement", Value: "***", Usage: "replacement string"},
 					cli.IntFlag{Name: "partial", Usage: "show first/last N chars"},
+					cli.BoolFlag{Name: "multiline", Usage: "match patterns across newlines (e.g. PEM keys)"},
 				},
 				Action: func(c *cli.Context) error {
-					patterns := c.StringSlice("pattern")
-					if len(patterns) == 0 {
-						return cli.NewExitError("at least one --pattern is required", 1)
+					patterns, err := combinePatternFlags(c)
+					if err != nil {
+						return err
+					}
+					if c.Bool("multiline") {
+						return services.MaskValuesMultiline(os.Stdin, os.Stdout, patterns, c.String("replacement"), c.Int("partial"))
 					}
 					return services.MaskValues(os.Stdin, os.Stdout, patterns, c.String("replacement"), c.Int("partial"))
 				},
@@ -35,18 +57,28 @@ func MaskCommand() cli.Command {
 				Name:  "file",
 				Usage: "redact sensitive values from a file",
 				Flags: []cli.Flag{
-					cli.StringSliceFlag{Name: "pattern", Usage: "regex pattern(s) to match values to mask"},
+					cli.StringSliceFlag{Name: "pattern", Usage: "regex pattern(s) to match values to mask (repeatable)"},
+					cli.StringFlag{Name: "preset", Usage: "comma-separated presets: aws,github,gcp,jwt,slack,stripe,pem"},
 					cli.StringFlag{Name: "replacement", Value: "***", Usage: "replacement string"},
 					cli.IntFlag{Name: "partial", Usage: "show first/last N chars"},
+					cli.BoolFlag{Name: "multiline", Usage: "match patterns across newlines"},
 				},
 				Action: func(c *cli.Context) error {
 					path := c.Args().First()
 					if path == "" {
 						return cli.NewExitError("file path required", 1)
 					}
-					patterns := c.StringSlice("pattern")
-					if len(patterns) == 0 {
-						return cli.NewExitError("at least one --pattern is required", 1)
+					patterns, err := combinePatternFlags(c)
+					if err != nil {
+						return err
+					}
+					if c.Bool("multiline") {
+						f, err := os.Open(path)
+						if err != nil {
+							return err
+						}
+						defer f.Close()
+						return services.MaskValuesMultiline(f, os.Stdout, patterns, c.String("replacement"), c.Int("partial"))
 					}
 					return services.MaskFile(path, os.Stdout, patterns, c.String("replacement"), c.Int("partial"))
 				},

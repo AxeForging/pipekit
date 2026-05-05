@@ -138,6 +138,57 @@ func ParseCommand() cli.Command {
 					return nil
 				},
 			},
+			{
+				Name:  "extract-frontmatter",
+				Usage: "extract leading YAML (--- ---) or TOML (+++ +++) frontmatter",
+				Flags: []cli.Flag{
+					cli.BoolFlag{Name: "json", Usage: "output frontmatter parsed as JSON"},
+					cli.BoolFlag{Name: "to-github", Usage: "write top-level keys to $GITHUB_ENV"},
+					cli.BoolFlag{Name: "uppercase-keys, u", Usage: "convert keys to UPPER_SNAKE_CASE for --to-github"},
+				},
+				Action: func(c *cli.Context) error {
+					r, err := getInputReader(c)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					body, format, err := services.ExtractFrontmatter(r)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					if body == nil {
+						return cli.NewExitError("no frontmatter found", 1)
+					}
+					if !c.Bool("json") && !c.Bool("to-github") {
+						fmt.Print(string(body))
+						return nil
+					}
+					var dataFormat services.DataFormat
+					if format == "toml" {
+						dataFormat = services.FormatTOML
+					} else {
+						dataFormat = services.FormatYAML
+					}
+					doc, err := services.Decode(body, dataFormat)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					if c.Bool("json") {
+						b, _ := json.Marshal(doc)
+						fmt.Println(string(b))
+						return nil
+					}
+					m, ok := doc.(map[string]interface{})
+					if !ok {
+						return cli.NewExitError("frontmatter is not a mapping", 1)
+					}
+					var kvs []domain.KeyValue
+					for k, v := range m {
+						kvs = append(kvs, domain.KeyValue{Key: k, Value: fmt.Sprintf("%v", v)})
+					}
+					kvs = services.TransformKeys(kvs, c.Bool("uppercase-keys"), "", false)
+					return services.WriteToGitHubEnv(kvs)
+				},
+			},
 		},
 	}
 }

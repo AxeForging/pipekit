@@ -1,0 +1,71 @@
+# cast.yaml — pipekit demo for README hero GIF
+# Run from /tmp/pipekit-demo so relative file paths resolve.
+#
+# Reset state, then record:
+#   rm -f /tmp/pipekit-demo/.attempts
+#   printf '{\n  "name": "acme-api",\n  "version": "1.4.2",\n  "description": "the api that pays the bills"\n}\n' \
+#     > /tmp/pipekit-demo/package.json
+#   cd /tmp/pipekit-demo
+#   python3 /home/youngestaxe/Documents/workspace/axeforge/git/scripts/cast/cast.py \
+#     /home/youngestaxe/Documents/workspace/axeforge/git/pipekit/cast.yaml
+
+output: /home/youngestaxe/Documents/workspace/axeforge/git/pipekit/docs/demo.gif
+
+recording:
+  cols: 100
+  rows: 28
+  idle_time_limit: 2
+  title: "pipekit — CI/CD Swiss Army knife"
+
+render:
+  theme: dracula
+  font: "JetBrains Mono"
+  font_size: 17
+  line_height: 1.4
+  speed: 1.0
+  idle_time_limit: 2
+
+defaults:
+  type_delay: 50
+  pause: 1.2
+
+scenes:
+  - comment: "200 lines of bash, 12 jq calls, 1 sed crime — yes, your deploy.yml"
+    pause: 1.6
+  - comment: "pipekit: one binary for the boring parts of CI"
+    pause: 1.6
+
+  # ── Act 1 — read structured config in any format ──
+  - comment: "read structured config — JSON, YAML, TOML, doesn't matter"
+  - type: "pipekit json get -p .image.tag -r deploy.json"
+  - type: "pipekit yaml get -p .resources.memory -r chart-values.yaml"
+  - comment: "or just inject the whole tree into env vars"
+  - type: "pipekit env from-json deploy.json --flatten --uppercase-keys"
+    pause: 2.2
+  - clear: true
+
+  # ── Act 2 — parse the gnarly bits CI always rolls by hand ──
+  - comment: "parse the gnarly bits you keep rewriting in awk"
+  - type: "pipekit image parse ghcr.io/acme/api:v1.4.2@sha256:abc123def456"
+    pause: 1.6
+  - type: "pipekit url parse 'postgres://app:s3cret@db.internal.svc:5432/billing?sslmode=require'"
+    pause: 2.2
+  - clear: true
+
+  # ── Act 3 — wrap your flaky deploys ──
+  - comment: "wrap your flaky deploys — retry + timeout + secret masking, in one go"
+  - type: "pipekit exec --attempts 3 --delay 1s --timeout 5s --mask-preset aws -- ./flaky.sh"
+    pause: 2.2
+  - clear: true
+
+  # ── Act 4 — cache keys + version bumps ──
+  - comment: "and the boring stuff: deterministic cache keys + version bumps"
+  - type: "pipekit cache-key from-files go.mod go.sum --prefix deps- --length 16"
+    pause: 1.4
+  - type: "pipekit json get -p .version -r package.json"
+  - type: "pipekit version bump patch -s package.json"
+  - type: "pipekit json get -p .version -r package.json"
+    pause: 2.0
+
+  - comment: "back to writing actual features."
+    pause: 2.5

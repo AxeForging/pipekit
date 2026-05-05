@@ -10,6 +10,10 @@
 
 **CI/CD pipeline Swiss Army knife** — replace fragile bash one-liners with a single, portable Go binary.
 
+<div align="center">
+  <img src="docs/demo.gif" alt="pipekit demo — read JSON/YAML, parse image refs and URLs, retry+mask, cache keys, version bumps" width="900">
+</div>
+
 ```bash
 # BEFORE                                    # AFTER
 for key in $(jq -r 'keys[]' config.json);   pipekit env from-json config.json \

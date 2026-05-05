@@ -42,6 +42,8 @@ func main() {
 		actions.ParseCommand(),
 		actions.JSONCommand(),
 		actions.YAMLCommand(),
+		actions.RenderCommand(),
+		actions.ExecCommand(),
 		{
 			Name:  "build-info",
 			Usage: "show build version information",

@@ -40,6 +40,8 @@ func main() {
 		actions.CacheKeyCommand(),
 		actions.ConfigCommand(),
 		actions.ParseCommand(),
+		actions.JSONCommand(),
+		actions.YAMLCommand(),
 		{
 			Name:  "build-info",
 			Usage: "show build version information",

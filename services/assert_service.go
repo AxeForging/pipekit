@@ -40,6 +40,33 @@ func AssertFileExists(paths []string) error {
 	return nil
 }
 
+// AssertPath checks that all named paths exist (file or directory).
+func AssertPath(paths []string) error {
+	var missing []string
+	for _, p := range paths {
+		if _, err := os.Stat(p); os.IsNotExist(err) {
+			missing = append(missing, p)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("paths not found: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// AssertDirNotEmpty checks that a directory exists and contains at least
+// one entry.
+func AssertDirNotEmpty(path string) error {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf("directory %s is empty", path)
+	}
+	return nil
+}
+
 // AssertJSONPath checks that a value at a JSON path matches the expected value.
 func AssertJSONPath(jsonData []byte, path, expected string) error {
 	var raw interface{}

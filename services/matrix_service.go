@@ -81,6 +81,24 @@ func MatrixFromJSON(r io.Reader, key string, filterField, filterValue string) (s
 	return string(data), nil
 }
 
+// MatrixShard splits a slice of items into N shards and returns the items
+// belonging to shard `index` (0-based). Useful for parallel test execution.
+func MatrixShard(items []string, total, index int) ([]string, error) {
+	if total <= 0 {
+		return nil, fmt.Errorf("--total must be positive")
+	}
+	if index < 0 || index >= total {
+		return nil, fmt.Errorf("--index must be in [0, %d)", total)
+	}
+	out := make([]string, 0, (len(items)/total)+1)
+	for i, item := range items {
+		if i%total == index {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
 // MatrixCombine generates a Cartesian product of multiple arrays.
 func MatrixCombine(arrays map[string][]string) (string, error) {
 	// Get sorted keys for deterministic output

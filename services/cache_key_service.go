@@ -10,6 +10,42 @@ import (
 	"strings"
 )
 
+// CacheKeyOptions configures TruncateAndPrefix and friends.
+type CacheKeyOptions struct {
+	Prefix string
+	Length int      // 0 = full hash
+	EnvVar []string // env vars to mix into the key
+}
+
+// CacheKeyFromFilesWithOpts is the rich-flag variant of CacheKeyFromFiles.
+// It mixes in --with-env values and optionally truncates the hash.
+func CacheKeyFromFilesWithOpts(files []string, opts CacheKeyOptions) (string, error) {
+	h := sha256.New()
+	// Hash file contents.
+	for _, f := range files {
+		file, err := os.Open(f)
+		if err != nil {
+			return "", fmt.Errorf("opening %s: %w", f, err)
+		}
+		if _, err := io.Copy(h, file); err != nil {
+			file.Close()
+			return "", fmt.Errorf("hashing %s: %w", f, err)
+		}
+		file.Close()
+	}
+	// Mix in env values (sorted for determinism).
+	envs := append([]string{}, opts.EnvVar...)
+	sort.Strings(envs)
+	for _, name := range envs {
+		fmt.Fprintf(h, "\x00%s=%s", name, os.Getenv(name))
+	}
+	hash := fmt.Sprintf("%x", h.Sum(nil))
+	if opts.Length > 0 && opts.Length < len(hash) {
+		hash = hash[:opts.Length]
+	}
+	return opts.Prefix + hash, nil
+}
+
 // CacheKeyFromFiles computes a SHA256 hash from one or more files.
 func CacheKeyFromFiles(files []string, prefix string) (string, error) {
 	h := sha256.New()

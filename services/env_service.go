@@ -86,6 +86,40 @@ func ParseYAML(r io.Reader, flatten bool, depth int, filter string) ([]domain.Ke
 	return mapToKVs(m), nil
 }
 
+// ParseTOML reads TOML from r and returns flattened key-value pairs.
+// Same flatten/depth/filter semantics as ParseJSON / ParseYAML.
+func ParseTOML(r io.Reader, flatten bool, depth int, filter string) ([]domain.KeyValue, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("reading TOML: %w", err)
+	}
+	v, err := Decode(data, FormatTOML)
+	if err != nil {
+		return nil, err
+	}
+
+	if filter != "" {
+		filtered, err := applyJQFilter(v, filter)
+		if err != nil {
+			return nil, err
+		}
+		v = filtered
+	}
+
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("expected TOML mapping at top level")
+	}
+	if flatten || depth > 0 {
+		maxDepth := -1
+		if depth > 0 {
+			maxDepth = depth
+		}
+		m = flattenMap("", m, maxDepth)
+	}
+	return mapToKVs(m), nil
+}
+
 // ParseDotenv reads a .env file and returns key-value pairs.
 func ParseDotenv(r io.Reader) ([]domain.KeyValue, error) {
 	var kvs []domain.KeyValue

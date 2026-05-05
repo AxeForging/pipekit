@@ -131,6 +131,36 @@ func AssertCommand() cli.Command {
 					return nil
 				},
 			},
+			{
+				Name:      "path",
+				Usage:     "assert one or more paths exist (file or directory)",
+				ArgsUsage: "PATH1 PATH2 ...",
+				Action: func(c *cli.Context) error {
+					paths := c.Args()
+					if len(paths) == 0 {
+						return cli.NewExitError("at least one path required", 1)
+					}
+					if err := services.AssertPath(paths); err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					return nil
+				},
+			},
+			{
+				Name:      "dir-not-empty",
+				Usage:     "assert that the named directory exists and has entries",
+				ArgsUsage: "DIR",
+				Action: func(c *cli.Context) error {
+					p := c.Args().First()
+					if p == "" {
+						return cli.NewExitError("directory required", 1)
+					}
+					if err := services.AssertDirNotEmpty(p); err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					return nil
+				},
+			},
 		},
 	}
 }

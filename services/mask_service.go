@@ -10,7 +10,40 @@ import (
 	"strings"
 )
 
-// MaskValues replaces occurrences of patterns in the input stream.
+// maskScannerBufferBytes is the maximum line size pipekit's masker handles
+// in line-by-line mode. The default bufio.Scanner cap is 64KB; we raise it
+// to 64MB so a single oversize log line doesn't silently halt processing.
+const maskScannerBufferBytes = 64 * 1024 * 1024
+
+// SecretPresets is a curated set of regex patterns for well-known secret
+// formats. Use via MaskValuesPreset / MaskValuesMultilinePreset.
+var SecretPresets = map[string][]string{
+	"aws":    {`AKIA[0-9A-Z]{16}`, `(?i)aws[_-]?secret[_-]?access[_-]?key["'\s:=]+[A-Za-z0-9/+=]{40}`},
+	"github": {`gh[pousr]_[A-Za-z0-9]{36,}`, `github_pat_[A-Za-z0-9_]{82}`},
+	"gcp":    {`-----BEGIN PRIVATE KEY-----[\s\S]*?-----END PRIVATE KEY-----`},
+	"jwt":    {`eyJ[A-Za-z0-9_=-]+\.eyJ[A-Za-z0-9_=-]+\.[A-Za-z0-9_.+/=-]+`},
+	"slack":  {`xox[baprs]-[A-Za-z0-9-]{10,}`},
+	"stripe": {`sk_(test|live)_[A-Za-z0-9]{24,}`},
+	"pem":    {`-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----`},
+}
+
+// PresetPatterns returns the patterns for the given preset names, joined.
+// Unknown preset names are returned in the second result for the caller to
+// surface as an error if desired.
+func PresetPatterns(names []string) (patterns []string, unknown []string) {
+	for _, n := range names {
+		key := strings.ToLower(strings.TrimSpace(n))
+		if pats, ok := SecretPresets[key]; ok {
+			patterns = append(patterns, pats...)
+		} else if key != "" {
+			unknown = append(unknown, key)
+		}
+	}
+	return
+}
+
+// MaskValues replaces occurrences of patterns in the input stream, line by
+// line. Use MaskValuesMultiline for patterns that span newlines.
 func MaskValues(r io.Reader, w io.Writer, patterns []string, replacement string, partial int) error {
 	compiledPatterns, err := compilePatterns(patterns)
 	if err != nil {
@@ -18,7 +51,7 @@ func MaskValues(r io.Reader, w io.Writer, patterns []string, replacement string,
 	}
 
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 64*1024), maskScannerBufferBytes)
 	for scanner.Scan() {
 		line := scanner.Text()
 		for _, re := range compiledPatterns {
@@ -29,6 +62,28 @@ func MaskValues(r io.Reader, w io.Writer, patterns []string, replacement string,
 		fmt.Fprintln(w, line)
 	}
 	return scanner.Err()
+}
+
+// MaskValuesMultiline reads the entire input and applies patterns over the
+// whole stream — required for secrets that span multiple lines (PEM keys,
+// multi-line JWTs split across log lines, etc.).
+func MaskValuesMultiline(r io.Reader, w io.Writer, patterns []string, replacement string, partial int) error {
+	compiledPatterns, err := compilePatterns(patterns)
+	if err != nil {
+		return err
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	out := string(data)
+	for _, re := range compiledPatterns {
+		out = re.ReplaceAllStringFunc(out, func(match string) string {
+			return maskString(match, replacement, partial)
+		})
+	}
+	_, err = io.WriteString(w, out)
+	return err
 }
 
 // MaskFile reads a file, applies masks, and writes to w.

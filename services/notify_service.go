@@ -6,11 +6,70 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/AxeForging/pipekit/domain"
 )
+
+// sortedFieldKeys returns the keys of a map in lexicographic order, so that
+// rendered notification payloads are deterministic across runs.
+func sortedFieldKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// BuildSlackPayload returns the JSON-serializable payload that SendSlack
+// would post — exposed for testing deterministic field ordering.
+func BuildSlackPayload(msg domain.NotifyMessage) map[string]interface{} {
+	color := statusColor(msg.Status)
+	emoji := statusEmoji(msg.Status)
+
+	var fields []map[string]interface{}
+	for _, k := range sortedFieldKeys(msg.Fields) {
+		fields = append(fields, map[string]interface{}{
+			"type": "mrkdwn",
+			"text": fmt.Sprintf("*%s:* %s", k, msg.Fields[k]),
+		})
+	}
+
+	blocks := []map[string]interface{}{{
+		"type": "section",
+		"text": map[string]interface{}{
+			"type": "mrkdwn",
+			"text": fmt.Sprintf("%s *%s*", emoji, msg.Title),
+		},
+	}}
+
+	if msg.Message != "" {
+		blocks = append(blocks, map[string]interface{}{
+			"type": "section",
+			"text": map[string]interface{}{
+				"type": "mrkdwn",
+				"text": msg.Message,
+			},
+		})
+	}
+
+	if len(fields) > 0 {
+		blocks = append(blocks, map[string]interface{}{
+			"type":   "section",
+			"fields": fields,
+		})
+	}
+
+	return map[string]interface{}{
+		"blocks": blocks,
+		"attachments": []map[string]interface{}{
+			{"color": color},
+		},
+	}
+}
 
 // SendSlack sends a formatted message to a Slack webhook.
 func SendSlack(msg domain.NotifyMessage) error {
@@ -18,10 +77,10 @@ func SendSlack(msg domain.NotifyMessage) error {
 	emoji := statusEmoji(msg.Status)
 
 	var fields []map[string]interface{}
-	for k, v := range msg.Fields {
+	for _, k := range sortedFieldKeys(msg.Fields) {
 		fields = append(fields, map[string]interface{}{
 			"type": "mrkdwn",
-			"text": fmt.Sprintf("*%s:* %s", k, v),
+			"text": fmt.Sprintf("*%s:* %s", k, msg.Fields[k]),
 		})
 	}
 
@@ -68,10 +127,10 @@ func SendDiscord(msg domain.NotifyMessage) error {
 	emoji := statusEmoji(msg.Status)
 
 	var fieldsList []map[string]interface{}
-	for k, v := range msg.Fields {
+	for _, k := range sortedFieldKeys(msg.Fields) {
 		fieldsList = append(fieldsList, map[string]interface{}{
 			"name":   k,
-			"value":  v,
+			"value":  msg.Fields[k],
 			"inline": true,
 		})
 	}
@@ -114,8 +173,8 @@ func SendTeams(msg domain.NotifyMessage) error {
 
 	if len(msg.Fields) > 0 {
 		var facts []map[string]string
-		for k, v := range msg.Fields {
-			facts = append(facts, map[string]string{"title": k, "value": v})
+		for _, k := range sortedFieldKeys(msg.Fields) {
+			facts = append(facts, map[string]string{"title": k, "value": msg.Fields[k]})
 		}
 		bodyItems = append(bodyItems, map[string]interface{}{
 			"type":  "FactSet",

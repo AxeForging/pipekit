@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/AxeForging/pipekit/domain"
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 // DiffFiles returns files changed between two git refs.
@@ -56,6 +57,8 @@ func DiffDirs(base, head string, includes, excludes []string) ([]string, error) 
 }
 
 // DiffMatch checks if any changed files match the given glob patterns.
+// Patterns support doublestar globs: `**` matches across path segments,
+// e.g. `api/**` matches `api/foo/bar.go`.
 func DiffMatch(base, head string, patterns []string) (bool, error) {
 	files, err := DiffFiles(base, head, nil, nil)
 	if err != nil {
@@ -64,24 +67,25 @@ func DiffMatch(base, head string, patterns []string) (bool, error) {
 
 	for _, f := range files {
 		for _, pattern := range patterns {
-			matched, err := filepath.Match(pattern, f)
+			matched, err := matchGlob(pattern, f)
 			if err != nil {
 				return false, fmt.Errorf("invalid pattern %q: %w", pattern, err)
 			}
 			if matched {
 				return true, nil
 			}
-			// Also try matching against just the directory part for ** patterns
-			if strings.Contains(pattern, "/") {
-				dir := filepath.Dir(f)
-				dirPattern := filepath.Dir(pattern)
-				if matched, _ := filepath.Match(dirPattern, dir); matched {
-					return true, nil
-				}
-			}
 		}
 	}
 	return false, nil
+}
+
+// matchGlob returns true if path matches pattern. Supports `**` (cross-segment)
+// via doublestar and falls back to filepath.Match for simple patterns.
+func matchGlob(pattern, path string) (bool, error) {
+	if strings.Contains(pattern, "**") {
+		return doublestar.Match(pattern, path)
+	}
+	return filepath.Match(pattern, path)
 }
 
 // DiffAffected maps changed paths to service names via a config.
@@ -138,7 +142,7 @@ func filterPaths(paths []string, includes, excludes []string) []string {
 		if len(includes) > 0 {
 			matched := false
 			for _, inc := range includes {
-				if m, _ := filepath.Match(inc, p); m {
+				if m, _ := matchGlob(inc, p); m {
 					matched = true
 					break
 				}
@@ -149,7 +153,7 @@ func filterPaths(paths []string, includes, excludes []string) []string {
 		}
 		excluded := false
 		for _, exc := range excludes {
-			if m, _ := filepath.Match(exc, p); m {
+			if m, _ := matchGlob(exc, p); m {
 				excluded = true
 				break
 			}

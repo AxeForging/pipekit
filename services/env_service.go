@@ -2,6 +2,8 @@ package services
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -171,7 +173,10 @@ func writeToGitHubFile(envVar string, kvs []domain.KeyValue) error {
 
 	for _, kv := range kvs {
 		if strings.Contains(kv.Value, "\n") {
-			delimiter := "EOF_PIPEKIT"
+			delimiter, err := uniqueHeredocDelimiter(kv.Value)
+			if err != nil {
+				return err
+			}
 			if _, err := fmt.Fprintf(f, "%s<<%s\n%s\n%s\n", kv.Key, delimiter, kv.Value, delimiter); err != nil {
 				return err
 			}
@@ -182,6 +187,22 @@ func writeToGitHubFile(envVar string, kvs []domain.KeyValue) error {
 		}
 	}
 	return nil
+}
+
+// uniqueHeredocDelimiter returns a delimiter guaranteed not to appear in value.
+// We use a random suffix; if it collides (astronomically unlikely), we retry.
+func uniqueHeredocDelimiter(value string) (string, error) {
+	for i := 0; i < 8; i++ {
+		buf := make([]byte, 12)
+		if _, err := rand.Read(buf); err != nil {
+			return "", fmt.Errorf("generating delimiter: %w", err)
+		}
+		d := "PIPEKIT_EOF_" + hex.EncodeToString(buf)
+		if !strings.Contains(value, d) {
+			return d, nil
+		}
+	}
+	return "", fmt.Errorf("could not generate non-colliding heredoc delimiter")
 }
 
 func applyJQFilter(data interface{}, filter string) (interface{}, error) {
@@ -221,10 +242,36 @@ func flattenMap(prefix string, m map[string]interface{}, maxDepth int) map[strin
 func mapToKVs(m map[string]interface{}) []domain.KeyValue {
 	var kvs []domain.KeyValue
 	for k, v := range m {
-		kvs = append(kvs, domain.KeyValue{Key: k, Value: fmt.Sprintf("%v", v)})
+		kvs = append(kvs, domain.KeyValue{Key: k, Value: scalarOrJSON(v)})
 	}
 	sort.Slice(kvs, func(i, j int) bool { return kvs[i].Key < kvs[j].Key })
 	return kvs
+}
+
+// scalarOrJSON renders scalars (string, bool, numbers, nil) as their natural
+// string form and any compound type ([]any, map[string]any) as compact JSON.
+// This avoids leaking Go's default rendering — e.g. "[a b c]" or "map[k:v]"
+// — into env-var values.
+func scalarOrJSON(v interface{}) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	case float64, float32, int, int32, int64, uint, uint32, uint64:
+		return fmt.Sprintf("%v", t)
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return string(b)
+	}
 }
 
 var nonAlphaNum = regexp.MustCompile(`[^a-zA-Z0-9]+`)

@@ -151,6 +151,49 @@ func TestFormatVersion(t *testing.T) {
 	}
 }
 
+// Regression: ensure VersionBump rewrites only the package's own version,
+// not a dep that happens to pin the same literal earlier in the file.
+func TestVersionBump_DoesNotRewriteDependencyPin(t *testing.T) {
+	tmpDir := t.TempDir()
+	f := filepath.Join(tmpDir, "package.json")
+	original := `{
+  "name": "myapp",
+  "dependencies": { "react": "1.2.3" },
+  "version": "1.2.3"
+}`
+	os.WriteFile(f, []byte(original), 0644)
+
+	newVersion, err := VersionBump(f, "patch", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if newVersion != "1.2.4" {
+		t.Errorf("expected 1.2.4, got %s", newVersion)
+	}
+	out, _ := os.ReadFile(f)
+	got := string(out)
+	if !contains(got, `"react": "1.2.3"`) {
+		t.Errorf("dep pin was rewritten: %s", got)
+	}
+	if !contains(got, `"version": "1.2.4"`) {
+		t.Errorf("version not bumped: %s", got)
+	}
+}
+
+func TestVersionSet(t *testing.T) {
+	tmpDir := t.TempDir()
+	f := filepath.Join(tmpDir, "Cargo.toml")
+	os.WriteFile(f, []byte("[package]\nname = \"myapp\"\nversion = \"0.5.1\"\n"), 0644)
+
+	if err := VersionSet(f, "1.0.0"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out, _ := os.ReadFile(f)
+	if !contains(string(out), `version = "1.0.0"`) {
+		t.Errorf("version not set: %s", string(out))
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
 }

@@ -18,6 +18,14 @@ Full reference for every pipekit command and flag. For end-to-end pipeline recip
 - [`cache-key`](#cache-key) — deterministic cache keys
 - [`config`](#config) — environment configuration
 - [`parse`](#parse) — structured data extraction
+- [`json` / `yaml`](#json) — read · query · mutate · merge · convert · pretty · table
+- [`render`](#render) — file templating with sprig-like funcs
+- [`exec`](#exec) — unified retry + mask + tee + timeout runner
+- [`url`](#url) — URL parsing
+- [`image`](#image) — container image ref parsing
+- [`time`](#time) — timestamps, formatting, arithmetic
+- [`port` · `uuid` · `random`](#misc) — small generators
+- [`doctor`](#doctor) — environment diagnostics
 - [Exit codes](#exit-codes)
 
 ---
@@ -645,6 +653,240 @@ Matches blocks tagged `yaml`, `yml`, or untagged blocks that parse as valid YAML
 | `--output-key` | Variable name for `--to-github-output` (default: `PARSED_YAML`) |
 
 </details>
+
+---
+
+## json
+
+Read, query, mutate, deep-merge, convert, and pretty-print JSON. The `yaml` command is identical except the default format for stdin is YAML — both share the same subcommands and per-file decoding still uses the file's extension (`.json`, `.yaml`, `.toml`, `.csv`).
+
+<details>
+<summary><strong><code>json get</code></strong> — extract a value at a jq-style path</summary>
+
+```sh
+pipekit json get values.yaml --path '.image.tag' --raw
+# v1.2.3
+
+# Pipe stdin
+echo '{"a":{"b":42}}' | pipekit json get --path '.a.b'
+
+# Write to GITHUB_OUTPUT
+pipekit json get values.yaml --path '.image.tag' --raw --to-github-output IMAGE_TAG
+```
+
+</details>
+
+<details>
+<summary><strong><code>json set</code> / <code>json del</code></strong> — write paths, in place or to stdout</summary>
+
+```sh
+pipekit json set values.yaml --path '.image.tag' --value 'v2.0.0' --in-place
+pipekit json set config.json --path '.flags' --json-value '["a","b"]' --pretty
+pipekit json del values.yaml --path '.legacy' --in-place
+```
+
+</details>
+
+<details>
+<summary><strong><code>json merge</code></strong> — deep-merge files (helm-style overrides)</summary>
+
+```sh
+pipekit json merge base.yaml prod.yaml --pretty --output merged.yaml
+pipekit json merge a.json b.json c.json --format yaml
+```
+
+Maps are deep-merged; scalars and slices in later files override.
+
+</details>
+
+<details>
+<summary><strong><code>json convert</code> / <code>json pretty</code> / <code>json table</code></strong></summary>
+
+```sh
+# Convert formats — extension auto-detected, or use --from
+pipekit json convert config.toml --to yaml
+pipekit json convert services.csv --to json --pretty
+
+# Pretty-print
+pipekit json pretty messy.json --indent 4
+
+# Aligned text table from an array of objects
+pipekit json table services.json --columns name,version,replicas
+```
+
+</details>
+
+---
+
+## render
+
+Render Go templates with a focused sprig-like FuncMap. Supports stacked `--values` files (deep-merged), inline `--set key=value` overrides (dotted keys), `--output` to a file.
+
+<details>
+<summary><strong>Examples</strong></summary>
+
+```sh
+# Helm-style values rendering
+pipekit render deployment.yaml.tpl \
+  --values base.yaml --values prod.yaml \
+  --set image.tag=v1.2.3 \
+  --output deployment.yaml
+
+# Inline template through stdin
+echo 'Hello {{ .Values.name | default "world" }}' \
+  | pipekit transform template
+```
+
+**Available functions:** `default`, `env`, `envOr`, `b64enc`, `b64dec`, `sha256sum`, `sha1sum`, `md5sum`, `regexReplace`, `regexMatch`, `replace`, `lower`, `upper`, `trim`, `trimPrefix`, `trimSuffix`, `contains`, `hasPrefix`, `hasSuffix`, `split`, `join`, `quote`, `squote`, `indent`, `nindent`, `ternary`, `toJson`, `toYaml`, `fromJson`, `fromYaml`, `now`, `date`, `list`, `dict`.
+
+</details>
+
+---
+
+## exec
+
+Unified runner that combines retry, masking, timeout, and tee in one verb. Replaces stacked `pipekit retry run -- bash -c "cmd | pipekit mask"`.
+
+<details>
+<summary><strong>Examples</strong></summary>
+
+```sh
+# Retry with backoff, mask any preset patterns, tee to a file
+pipekit exec --attempts 3 --backoff --jitter \
+  --mask-preset "github,aws" \
+  --tee deploy.log \
+  -- ./deploy.sh
+
+# Per-attempt timeout + total deadline
+pipekit exec --attempts 5 --delay 5s --timeout 30s --max-elapsed 5m \
+  -- helm upgrade --install myapp ./chart
+
+# Only retry when stderr matches a regex (e.g. rate limiting)
+pipekit exec --attempts 4 --delay 10s --retry-on-stderr "rate limit|429" \
+  -- npm publish
+```
+
+| Flag | Description | Default |
+|---|---|---|
+| `--attempts, -a` | Number of attempts | `1` |
+| `--delay, -d` | Initial delay between retries | `5s` |
+| `--backoff` | Double the delay after each fail | `false` |
+| `--jitter` | Add up to 20% jitter to retry delays | `false` |
+| `--timeout, -t` | Per-attempt timeout | — |
+| `--max-elapsed` | Total deadline across all attempts | — |
+| `--mask` | Regex to mask in stdout/stderr (repeatable) | — |
+| `--mask-preset` | Comma-separated: aws,github,gcp,jwt,slack,stripe,pem | — |
+| `--mask-repl` | Replacement string | `***` |
+| `--tee` | Also write combined output to this file | — |
+| `--retry-on-stderr` | Regex; only retry when stderr matches | — |
+
+</details>
+
+---
+
+## url
+
+```sh
+# Split a URL into env vars
+pipekit url parse "postgres://app:secret@db.internal:5432/prod" --prefix DB_ --to-github
+# DB_SCHEME=postgres
+# DB_HOST=db.internal
+# DB_PORT=5432
+# DB_USER=app
+# DB_PASSWORD=secret
+# DB_PATH=/prod
+```
+
+Empty components are dropped.
+
+---
+
+## image
+
+```sh
+# Parse a container image reference
+pipekit image parse "ghcr.io/org/repo:v1.2.3@sha256:abc..." --prefix IMG_ --to-github
+# IMG_REGISTRY=ghcr.io  IMG_REPOSITORY=org/repo  IMG_TAG=v1.2.3  IMG_DIGEST=sha256:abc...
+
+# JSON output
+pipekit image parse "redis:7" --json
+# {"Registry":"docker.io","Repository":"library/redis","Tag":"7","Digest":""}
+```
+
+Defaults: `redis` → `docker.io/library/redis:latest`. Registry is detected by `.`, `:`, or `localhost` in the leading segment.
+
+---
+
+## time
+
+<details>
+<summary><strong>Examples</strong></summary>
+
+```sh
+# Named layouts
+pipekit time now --format rfc3339   # 2026-05-05T12:30:45Z
+pipekit time now --format unix      # 1778070645
+pipekit time now --format compact   # 20260505-123045
+pipekit time now --format tag       # 20260505-1230 (great for image tags)
+pipekit time now --format date      # 2026-05-05
+
+# Format conversion
+pipekit time format "2026-05-05T12:30:45Z" --from rfc3339 --to "Jan 2, 2006"
+
+# Arithmetic
+pipekit time add 30m --format rfc3339              # 30m from now
+pipekit time add 1h --from "2026-05-05T12:00:00Z"  # 1h from explicit base
+```
+
+Named layouts: `rfc3339`, `rfc1123`, `rfc822`, `unix`, `unix-ms`, `compact`, `date`, `datetime`, `tag`, `iso`. Anything else is treated as a raw Go time layout.
+
+</details>
+
+---
+
+## misc
+
+```sh
+# Free TCP port (OS-picked, or scan a range)
+pipekit port free
+pipekit port free --low 9000 --high 9100
+
+# UUID v4 (or 8-char short form)
+pipekit uuid
+pipekit uuid --short
+
+# Cryptographically random string
+pipekit random --length 32 --alphabet hex
+pipekit random --length 12 --alphabet base32 --to-github-output BUILD_ID
+```
+
+Alphabets: `alnum` (default), `alpha`, `hex`, `base32`, `digits`, `lower`, `upper`.
+
+---
+
+## doctor
+
+Diagnose pipekit's runtime environment — CI platform detection, expected env vars, tool availability, and webhook configuration.
+
+```sh
+pipekit doctor
+# [platform]
+# · ci platform            github-actions
+# · go runtime             go1.24.6 linux/amd64
+#
+# [tools]
+# ✓ git on PATH
+#
+# [ci-vars]
+# ✓ GITHUB_ENV             set
+# ✓ GITHUB_OUTPUT          set
+# ⚠ GITHUB_STEP_SUMMARY    not set
+# ...
+
+pipekit doctor --json   # for piping into jq / pipekit json
+```
+
+Detects: GitHub Actions, GitLab CI, Buildkite, CircleCI, Jenkins, plus a generic `CI=true` fallback.
 
 ---
 

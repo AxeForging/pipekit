@@ -367,6 +367,97 @@ pipeline {
 
 ---
 
+## v0.2 patterns: json, render, exec
+
+Recipes built on the new commands.
+
+<details>
+<summary><strong>Helm-style values overlay → render → kubectl apply</strong></summary>
+
+```sh
+# Stack values: base + per-env + inline overrides
+pipekit render manifests/deployment.yaml.tpl \
+  --values values/base.yaml \
+  --values values/prod.yaml \
+  --set image.tag=$(pipekit time now --format tag) \
+  --output /tmp/deployment.yaml
+
+kubectl apply -f /tmp/deployment.yaml
+```
+
+</details>
+
+<details>
+<summary><strong>Pull config from helm chart, mutate, save</strong></summary>
+
+```sh
+# Bump only the .image.tag in values.yaml without touching anything else
+pipekit yaml set chart/values.yaml --path '.image.tag' --value 'v1.2.3' --in-place
+
+# Or: deep-merge a per-env overlay
+pipekit yaml merge chart/values.yaml chart/values.prod.yaml --output /tmp/merged.yaml
+```
+
+</details>
+
+<details>
+<summary><strong>Render a step-summary table from a JSON manifest</strong></summary>
+
+```sh
+pipekit json table services.json --columns name,version,status \
+  | pipekit summary section --title "Deployed services" --to-github-summary
+```
+
+</details>
+
+<details>
+<summary><strong>Wrap a flaky deploy in retry + mask + tee in one verb</strong></summary>
+
+```sh
+pipekit exec \
+  --attempts 5 --backoff --jitter \
+  --timeout 5m --max-elapsed 20m \
+  --mask-preset github,aws \
+  --tee deploy.log \
+  --retry-on-stderr "(rate limit|connection reset|EOF)" \
+  -- ./scripts/deploy.sh
+```
+
+</details>
+
+<details>
+<summary><strong>Database URL → connection env vars</strong></summary>
+
+```sh
+pipekit url parse "$DATABASE_URL" --prefix DB_ --to-github
+# Now DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_PATH (etc) are set
+pipekit assert env-exists DB_HOST DB_USER DB_PASSWORD
+```
+
+</details>
+
+<details>
+<summary><strong>Test sharding with matrix shard</strong></summary>
+
+```yaml
+# .github/workflows/test.yml
+jobs:
+  test:
+    strategy:
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - run: |
+          go test -list . ./... | tail -n +2 > tests.txt
+          pipekit matrix shard --total 4 --index ${{ matrix.shard }} \
+            --from-stdin-lines < tests.txt > my-shard.txt
+          xargs -a my-shard.txt go test -run
+```
+
+</details>
+
+---
+
 ## Combining commands
 
 The real value comes from chaining a few commands together. A few patterns:

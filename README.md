@@ -75,7 +75,15 @@ More end-to-end recipes → **[docs/EXAMPLES.md](docs/EXAMPLES.md)**
 | `retry` | Run any command with attempt count, delay, backoff, exit-code filtering | [↗](docs/COMMANDS.md#retry) |
 | `cache-key` | Deterministic SHA256 cache keys from files / globs / composite parts | [↗](docs/COMMANDS.md#cache-key) |
 | `config` | Resolve env-specific config maps; map branches to environments | [↗](docs/COMMANDS.md#config) |
-| `parse` | Pull fenced code blocks / YAML out of issue bodies, PR comments, markdown | [↗](docs/COMMANDS.md#parse) |
+| `parse` | Pull fenced code blocks / YAML / frontmatter out of issue bodies, PR comments, markdown | [↗](docs/COMMANDS.md#parse) |
+| `json` / `yaml` | Get / set / del / deep-merge / convert / pretty / table on JSON, YAML, TOML, CSV | [↗](docs/COMMANDS.md#json) |
+| `render` | Render Go templates with a sprig-like FuncMap and stacked `--values` files | [↗](docs/COMMANDS.md#render) |
+| `exec` | Unified retry + mask + tee + timeout command runner | [↗](docs/COMMANDS.md#exec) |
+| `url parse` | Split a URL into `SCHEME / HOST / PORT / USER / PASSWORD / PATH / QUERY` env vars | [↗](docs/COMMANDS.md#url) |
+| `image parse` | Split a container image ref into registry / repository / tag / digest | [↗](docs/COMMANDS.md#image) |
+| `time` | RFC3339 / unix / tag / compact / iso timestamps; format conversion; arithmetic | [↗](docs/COMMANDS.md#time) |
+| `port free` · `uuid` · `random` | Tiny generators for ephemeral resource names and ports | [↗](docs/COMMANDS.md#misc) |
+| `doctor` | Diagnose CI platform, env-var contract, tool availability | [↗](docs/COMMANDS.md#doctor) |
 
 Full flag reference → **[docs/COMMANDS.md](docs/COMMANDS.md)**
 

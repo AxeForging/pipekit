@@ -44,6 +44,13 @@ func main() {
 		actions.YAMLCommand(),
 		actions.RenderCommand(),
 		actions.ExecCommand(),
+		actions.URLCommand(),
+		actions.ImageCommand(),
+		actions.TimeCommand(),
+		actions.PortCommand(),
+		actions.UUIDCommand(),
+		actions.RandomCommand(),
+		actions.DoctorCommand(),
 		{
 			Name:  "build-info",
 			Usage: "show build version information",

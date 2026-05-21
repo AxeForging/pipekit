@@ -78,6 +78,10 @@ More end-to-end recipes → **[docs/EXAMPLES.md](docs/EXAMPLES.md)**
 | `version` | Get / bump / compare versions across `package.json`, `Cargo.toml`, `Chart.yaml`, etc. | [↗](docs/COMMANDS.md#version) |
 | `retry` | Run any command with attempt count, delay, backoff, exit-code filtering | [↗](docs/COMMANDS.md#retry) |
 | `cache-key` | Deterministic SHA256 cache keys from files / globs / composite parts | [↗](docs/COMMANDS.md#cache-key) |
+| `checksum` | Generate / verify release checksums for artifact files | [↗](docs/COMMANDS.md#checksum) |
+| `artifact` | Assert artifacts exist and generate size/SHA256 manifests | [↗](docs/COMMANDS.md#artifact) |
+| `git` | CI-friendly git metadata: ref, SHA, tags, dirty state | [↗](docs/COMMANDS.md#git) |
+| `changelog` | Generate release notes from git commit ranges | [↗](docs/COMMANDS.md#changelog) |
 | `config` | Resolve env-specific config maps; map branches to environments | [↗](docs/COMMANDS.md#config) |
 | `parse` | Pull fenced code blocks / YAML / frontmatter out of issue bodies, PR comments, markdown | [↗](docs/COMMANDS.md#parse) |
 | `json` / `yaml` | Get / set / del / deep-merge / convert / pretty / table on JSON, YAML, TOML, CSV | [↗](docs/COMMANDS.md#json) |

@@ -499,6 +499,25 @@ pipekit diff dirs --base origin/main \
 
 </details>
 
+<details>
+<summary><strong>Release artifacts → checksums → manifest → notes</strong></summary>
+
+```sh
+make build-all
+
+pipekit artifact assert "dist/pipekit-*"
+pipekit checksum files dist/pipekit-* --output dist/checksums.txt
+pipekit checksum verify dist/checksums.txt
+pipekit artifact manifest "dist/pipekit-*" "dist/checksums.txt" \
+  --pretty --output dist/artifacts.json
+
+pipekit git sha --short --to-github-output git_sha
+pipekit git ref --slug --to-github-output ref_slug
+pipekit changelog since-tag --conventional --output RELEASE_NOTES.md
+```
+
+</details>
+
 ---
 
 **See also:** [Commands](COMMANDS.md) · [Requirements](REQUIREMENTS.md) · [Install](INSTALL.md) · [← README](../README.md)

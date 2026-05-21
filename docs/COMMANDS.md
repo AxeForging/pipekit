@@ -16,6 +16,10 @@ Full reference for every pipekit command and flag. For end-to-end pipeline recip
 - [`version`](#version) — version management
 - [`retry`](#retry) — command retry
 - [`cache-key`](#cache-key) — deterministic cache keys
+- [`checksum`](#checksum) — release checksums
+- [`artifact`](#artifact) — artifact manifests and assertions
+- [`git`](#git) — CI-friendly git metadata
+- [`changelog`](#changelog) — release notes from git history
 - [`config`](#config) — environment configuration
 - [`parse`](#parse) — structured data extraction
 - [`json` / `yaml`](#json) — read · query · mutate · merge · convert · pretty · table
@@ -558,6 +562,118 @@ pipekit cache-key composite linux amd64 "$(pipekit transform hash --file go.sum)
 |---|---|---|
 | `--with-env` | `from-files` | Comma-separated env var names to mix into the hash (sorted, deterministic) |
 | `--length` | `from-files` | Truncate hex output to N chars (0 = full) |
+
+</details>
+
+---
+
+## checksum
+
+Generate and verify release checksums without shell loops.
+
+<details>
+<summary><strong>Examples</strong></summary>
+
+```sh
+# Write a standard sha256 checksum file
+pipekit checksum files dist/* --output dist/checksums.txt
+
+# JSON output for manifests or summaries
+pipekit checksum files dist/* --format json
+
+# Verify checksums before uploading artifacts
+pipekit checksum verify dist/checksums.txt
+
+# Alternate algorithms
+pipekit checksum files dist/* --algorithm sha1
+```
+
+| Subcommand | Description |
+|---|---|
+| `checksum files FILE...` | Hash each file independently |
+| `checksum verify CHECKSUM_FILE` | Verify `<checksum> <path>` lines |
+
+Flags: `--algorithm sha256|sha1|md5`, `--format text|json`, `--output`.
+
+</details>
+
+---
+
+## artifact
+
+Validate and describe CI artifacts before upload or release.
+
+<details>
+<summary><strong>Examples</strong></summary>
+
+```sh
+# Fail early if expected build outputs are missing
+pipekit artifact assert "dist/pipekit-linux-*" "dist/checksums.txt"
+
+# Generate a JSON manifest with path, size, and sha256
+pipekit artifact manifest "dist/pipekit-*" --pretty --output dist/artifacts.json
+```
+
+| Subcommand | Description |
+|---|---|
+| `artifact assert PATH_OR_GLOB...` | Fail unless each path/glob resolves to at least one file |
+| `artifact manifest PATH_OR_GLOB...` | Emit JSON artifact metadata |
+
+</details>
+
+---
+
+## git
+
+Read git metadata in formats that are easy to pass between CI steps.
+
+<details>
+<summary><strong>Examples</strong></summary>
+
+```sh
+pipekit git sha --short --to-github-output git_sha
+pipekit git ref --slug --max-length 40 --to-github-output ref_slug
+pipekit git current-tag
+pipekit git previous-tag
+pipekit git is-dirty --print
+```
+
+| Subcommand | Description |
+|---|---|
+| `git sha` | Print current commit SHA (`--short` supported) |
+| `git ref` | Print current branch/tag, honoring GitHub Actions env vars |
+| `git current-tag` | Print tag pointing at `HEAD` |
+| `git previous-tag` | Print latest reachable tag |
+| `git is-dirty` | Detect uncommitted tracked/untracked changes |
+
+</details>
+
+---
+
+## changelog
+
+Generate markdown release notes from git commits.
+
+<details>
+<summary><strong>Examples</strong></summary>
+
+```sh
+# Commits since a tag
+pipekit changelog generate --from v1.2.0 --to HEAD
+
+# Group conventional commits into Features / Fixes / Maintenance
+pipekit changelog generate --from v1.2.0 --conventional --output RELEASE_NOTES.md
+
+# Use the latest reachable tag as the start point
+pipekit changelog since-tag --conventional --to-github-output release_notes
+```
+
+| Subcommand | Description |
+|---|---|
+| `changelog generate` | Generate notes for `--from..--to` |
+| `changelog since-tag` | Generate notes since the latest reachable tag |
+
+Flags: `--from`, `--to`, `--conventional`, `--format markdown|json`, `--output`, `--to-github-output`.
 
 </details>
 

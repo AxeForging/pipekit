@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: Build pipekit
+        run: make build
+
+      - name: Integration tests
+        run: go test ./integration/... -v
+
+      - name: Export env from JSON
+        run: |
+          ./dist/pipekit env from-json --flatten --uppercase-keys --to-github <<'JSON'
+          {
+            "name": "pipekit",
+            "ci": {
+              "platform": "github-actions",
+              "purpose": "dogfood"
+            }
+          }
+          JSON
+
+      - name: Assert exported env in later step
+        run: |
+          ./dist/pipekit assert env-exists NAME CI_PLATFORM CI_PURPOSE
+          test "$NAME" = "pipekit"
+          test "$CI_PLATFORM" = "github-actions"
+          test "$CI_PURPOSE" = "dogfood"
+
+      - name: Export outputs from JSON
+        id: json_outputs
+        run: |
+          ./dist/pipekit env from-json --uppercase-keys --to-github-output <<'JSON'
+          {
+            "artifact": "pipekit",
+            "channel": "ci"
+          }
+          JSON
+
+      - name: Assert exported outputs in later step
+        env:
+          ARTIFACT: ${{ steps.json_outputs.outputs.ARTIFACT }}
+          CHANNEL: ${{ steps.json_outputs.outputs.CHANNEL }}
+        run: |
+          ./dist/pipekit assert env-exists ARTIFACT CHANNEL
+          test "$ARTIFACT" = "pipekit"
+          test "$CHANNEL" = "ci"
+
+      - name: Export cache key
+        id: cache_key
+        run: ./dist/pipekit cache-key from-files go.sum --prefix "go-" --to-github-output cache_key
+
+      - name: Assert cache key output in later step
+        env:
+          CACHE_KEY: ${{ steps.cache_key.outputs.cache_key }}
+        run: |
+          ./dist/pipekit assert env-exists CACHE_KEY
+          case "$CACHE_KEY" in
+            go-*) ;;
+            *) echo "cache key missing go- prefix: $CACHE_KEY"; exit 1 ;;
+          esac
+
+      - name: Dogfood JSON, mask, exec, and summary
+        run: |
+          printf '{"module":"github.com/AxeForging/pipekit","kind":"ci"}\n' > pipekit-ci.json
+          test "$(./dist/pipekit json get pipekit-ci.json --path '.module' --raw)" = "github.com/AxeForging/pipekit"
+          ./dist/pipekit assert json-path --file pipekit-ci.json --path '.kind' --expected "ci"
+          ./dist/pipekit git sha --short --to-github-output git_sha
+          ./dist/pipekit git ref --slug --to-github-output ref_slug
+          ./dist/pipekit checksum files dist/pipekit --output pipekit-checksums.txt
+          ./dist/pipekit checksum verify pipekit-checksums.txt
+          ./dist/pipekit artifact assert dist/pipekit pipekit-checksums.txt
+          ./dist/pipekit artifact manifest dist/pipekit pipekit-checksums.txt --pretty --output pipekit-artifacts.json
+          ./dist/pipekit changelog generate --from origin/main --conventional --output pipekit-changelog.md
+          ./dist/pipekit mask github "secret-ci-value"
+          ./dist/pipekit exec --attempts 2 --delay 1s --mask "secret-[a-z-]+" --tee pipekit-ci.log -- sh -c 'echo token=secret-ci-value'
+          ./dist/pipekit summary badge --label "pipekit" --status success --to-github-summary
+          ./dist/pipekit summary section --title "pipekit artifacts" --to-github-summary < pipekit-artifacts.json
+          ./dist/pipekit summary section --title "pipekit CI log" --to-github-summary < pipekit-ci.log

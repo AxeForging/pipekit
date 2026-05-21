@@ -346,6 +346,73 @@ func TestE2E_CacheKeyWithEnv(t *testing.T) {
 	}
 }
 
+func TestE2E_ChecksumAndArtifact(t *testing.T) {
+	dir := t.TempDir()
+	dist := filepath.Join(dir, "dist")
+	os.MkdirAll(dist, 0755)
+	bin := filepath.Join(dist, "pipekit-linux-amd64")
+	os.WriteFile(bin, []byte("binary"), 0644)
+
+	checksums := filepath.Join(dist, "checksums.txt")
+	stdout, _, code := runPipekit(t,
+		[]string{"checksum", "files", bin, "--output", checksums}, "")
+	if code != 0 {
+		t.Fatalf("checksum files exit %d stdout=%s", code, stdout)
+	}
+	if _, err := os.Stat(checksums); err != nil {
+		t.Fatalf("checksums not written: %v", err)
+	}
+	if _, _, code := runPipekit(t, []string{"checksum", "verify", checksums}, ""); code != 0 {
+		t.Fatalf("checksum verify exit %d", code)
+	}
+
+	stdout, _, code = runPipekit(t,
+		[]string{"artifact", "manifest", filepath.Join(dist, "pipekit-*"), "--pretty"}, "")
+	if code != 0 {
+		t.Fatalf("artifact manifest exit %d", code)
+	}
+	expectAll(t, stdout, `"path"`, `"size"`, `"sha256"`)
+}
+
+func TestE2E_GitAndChangelog(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	dir := t.TempDir()
+	mustRunIn(t, dir, "git", "init", "-q")
+	mustRunIn(t, dir, "git", "config", "user.email", "test@example.com")
+	mustRunIn(t, dir, "git", "config", "user.name", "test")
+	mustRunIn(t, dir, "git", "config", "commit.gpgsign", "false")
+
+	os.WriteFile(filepath.Join(dir, "README.md"), []byte("hi"), 0644)
+	mustRunIn(t, dir, "git", "add", ".")
+	mustRunIn(t, dir, "git", "commit", "-q", "-m", "feat: initial")
+	mustRunIn(t, dir, "git", "tag", "v0.1.0")
+	os.WriteFile(filepath.Join(dir, "fix.txt"), []byte("fix"), 0644)
+	mustRunIn(t, dir, "git", "add", ".")
+	mustRunIn(t, dir, "git", "commit", "-q", "-m", "fix: release artifact path")
+
+	cmd := exec.Command(binaryPath(t), "git", "sha", "--short")
+	cmd.Dir = dir
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git sha: %v", err)
+	}
+	if len(strings.TrimSpace(stdout.String())) < 7 {
+		t.Fatalf("unexpected short sha: %q", stdout.String())
+	}
+
+	cmd = exec.Command(binaryPath(t), "changelog", "generate", "--from", "v0.1.0", "--conventional")
+	cmd.Dir = dir
+	stdout.Reset()
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("changelog: %v", err)
+	}
+	expectAll(t, stdout.String(), "### Fixes", "fix: release artifact path")
+}
+
 func TestE2E_ParseFrontmatter(t *testing.T) {
 	input := `---
 title: My Post

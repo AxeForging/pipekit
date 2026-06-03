@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="docs/assets/pipekit-logo.png" alt="pipekit logo" width="180">
-  <h1>pipekit</h1>
+  <img src="docs/assets/pipekit-wordmark.png" alt="Pipekit — CI/CD pipeline toolkit" width="520">
   <p>
     <img src="https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat-square&logo=go" alt="Go Version">
     <img src="https://img.shields.io/badge/OS-Linux%20%7C%20macOS%20%7C%20Windows-darkblue?style=flat-square&logo=windows" alt="OS Support">

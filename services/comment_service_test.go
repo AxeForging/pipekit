@@ -34,6 +34,17 @@ func TestFindHiddenAnchors(t *testing.T) {
 	}
 }
 
+func TestFindHiddenAnchorsIgnoresRegularHTMLComments(t *testing.T) {
+	body := "<!-- preview -->\n<!-- pipekit:preview -->\n<!-- pipekit:bad name -->\n"
+	anchors := FindHiddenAnchors(body)
+	if len(anchors) != 1 {
+		t.Fatalf("expected 1 valid pipekit anchor, got %d", len(anchors))
+	}
+	if anchors[0].Name != "preview" {
+		t.Fatalf("unexpected anchor: %#v", anchors[0])
+	}
+}
+
 func TestRenderAnchoredComment(t *testing.T) {
 	got, err := RenderAnchoredComment("ci/status", "## Status\n\nReady\n")
 	if err != nil {
@@ -57,6 +68,18 @@ func TestAmendAnchoredCommentReplacesBodyAfterAnchor(t *testing.T) {
 	}
 }
 
+func TestAmendAnchoredCommentUsesExactAnchor(t *testing.T) {
+	existing := "<!-- pipekit:preview-db -->\n\nkeep db\n"
+	got, err := AmendAnchoredComment(existing, "preview", "new preview")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "<!-- pipekit:preview -->\n\nnew preview\n"
+	if got != want {
+		t.Fatalf("expected new exact-anchor body, got:\n%s", got)
+	}
+}
+
 func TestAmendAnchoredCommentCreatesWhenMissing(t *testing.T) {
 	got, err := AmendAnchoredComment("old", "preview", "new")
 	if err != nil {
@@ -67,6 +90,14 @@ func TestAmendAnchoredCommentCreatesWhenMissing(t *testing.T) {
 	}
 }
 
+func TestRenderCodeFenceUsesMinimumFenceForPlainContent(t *testing.T) {
+	got := RenderCodeFence("yaml", "url: https://example.com\n")
+	want := "```yaml\nurl: https://example.com\n```\n"
+	if got != want {
+		t.Fatalf("unexpected fence:\n%s", got)
+	}
+}
+
 func TestRenderCodeFenceExtendsFenceForNestedBackticks(t *testing.T) {
 	got := RenderCodeFence("md", "before\n```yaml\nx: y\n```\nafter")
 	if !strings.HasPrefix(got, "````md\n") {
@@ -74,6 +105,23 @@ func TestRenderCodeFenceExtendsFenceForNestedBackticks(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "\n````\n") {
 		t.Fatalf("expected four-backtick closing fence, got:\n%s", got)
+	}
+}
+
+func TestInspectCommentsRawMarkdownFallback(t *testing.T) {
+	input := "<!-- pipekit:preview -->\n\n```yaml\nstatus: ready\n```\n"
+	comments, err := InspectComments(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(comments) != 1 {
+		t.Fatalf("expected one markdown comment, got %d", len(comments))
+	}
+	if comments[0].ID != "" || comments[0].URL != "" {
+		t.Fatalf("raw markdown should not have GitHub metadata: %#v", comments[0])
+	}
+	if len(comments[0].Anchors) != 1 || len(comments[0].Blocks) != 1 {
+		t.Fatalf("unexpected inspection: %#v", comments[0])
 	}
 }
 
@@ -88,6 +136,13 @@ func TestInspectMarkdownComment(t *testing.T) {
 	}
 	if len(got.Blocks) != 1 || got.Blocks[0].Language != "yaml" {
 		t.Fatalf("unexpected blocks: %#v", got.Blocks)
+	}
+}
+
+func TestInspectCommentsMalformedGitHubJSONReturnsError(t *testing.T) {
+	input := `[{"id": 1, "body": "<!-- pipekit:preview -->"}`
+	if _, err := InspectComments(strings.NewReader(input)); err == nil {
+		t.Fatal("expected malformed JSON error")
 	}
 }
 
@@ -112,5 +167,36 @@ func TestInspectCommentsGitHubArrayAndSelect(t *testing.T) {
 	}
 	if len(selected.Blocks) != 1 || selected.Blocks[0].Language != "js" {
 		t.Fatalf("unexpected selected blocks: %#v", selected.Blocks)
+	}
+}
+
+func TestSelectAnchoredCommentReturnsFirstExactMatch(t *testing.T) {
+	comments := []CommentInspection{
+		{
+			ID:      "1",
+			Anchors: []HiddenAnchor{{Name: "preview-db"}},
+		},
+		{
+			ID:      "2",
+			Anchors: []HiddenAnchor{{Name: "preview"}},
+		},
+		{
+			ID:      "3",
+			Anchors: []HiddenAnchor{{Name: "preview"}},
+		},
+	}
+	selected, ok := SelectAnchoredComment(comments, "preview")
+	if !ok {
+		t.Fatal("expected exact match")
+	}
+	if selected.ID != "2" {
+		t.Fatalf("expected first exact match id 2, got %q", selected.ID)
+	}
+}
+
+func TestSelectAnchoredCommentNoMatch(t *testing.T) {
+	comments := []CommentInspection{{ID: "1", Anchors: []HiddenAnchor{{Name: "other"}}}}
+	if selected, ok := SelectAnchoredComment(comments, "preview"); ok {
+		t.Fatalf("expected no match, got %#v", selected)
 	}
 }

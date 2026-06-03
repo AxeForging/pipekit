@@ -88,6 +88,48 @@ func TestExtractCodeBlocks_LongFenceWithNestedBackticks(t *testing.T) {
 	}
 }
 
+func TestExtractCodeBlocks_IndentedFenceAndLongerClosingFence(t *testing.T) {
+	input := "  ```yaml\nname: test\n````\n"
+
+	blocks, err := ExtractCodeBlocks(strings.NewReader(input), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(blocks))
+	}
+	if blocks[0].Language != "yaml" || blocks[0].Content != "name: test" {
+		t.Fatalf("unexpected block: %#v", blocks[0])
+	}
+}
+
+func TestExtractCodeBlocks_IgnoresUnterminatedFence(t *testing.T) {
+	input := "before\n```yaml\nname: test\n"
+
+	blocks, err := ExtractCodeBlocks(strings.NewReader(input), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(blocks) != 0 {
+		t.Fatalf("expected unterminated fence to be ignored, got %#v", blocks)
+	}
+}
+
+func TestExtractCodeBlocks_IgnoresShortFenceBeforeValidBlock(t *testing.T) {
+	input := "``yaml\nignored\n``\n```yaml\nname: test\n```\n"
+
+	blocks, err := ExtractCodeBlocks(strings.NewReader(input), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("expected only valid block, got %#v", blocks)
+	}
+	if blocks[0].Language != "yaml" || blocks[0].Content != "name: test" {
+		t.Fatalf("unexpected block: %#v", blocks[0])
+	}
+}
+
 func TestExtractCodeBlocks_NoLanguage(t *testing.T) {
 	input := "```\nplain text\n```\n"
 

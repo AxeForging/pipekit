@@ -70,6 +70,24 @@ func TestExtractCodeBlocks_TildeFence(t *testing.T) {
 	}
 }
 
+func TestExtractCodeBlocks_LongFenceWithNestedBackticks(t *testing.T) {
+	input := "````md\nbefore\n```yaml\nname: test\n```\nafter\n````\n"
+
+	blocks, err := ExtractCodeBlocks(strings.NewReader(input), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(blocks))
+	}
+	if blocks[0].Language != "md" {
+		t.Errorf("expected md, got %q", blocks[0].Language)
+	}
+	if !strings.Contains(blocks[0].Content, "```yaml\nname: test\n```") {
+		t.Errorf("expected nested fence to be preserved, got %q", blocks[0].Content)
+	}
+}
+
 func TestExtractCodeBlocks_NoLanguage(t *testing.T) {
 	input := "```\nplain text\n```\n"
 

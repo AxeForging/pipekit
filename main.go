@@ -44,6 +44,7 @@ func main() {
 		actions.ChangelogCommand(),
 		actions.ConfigCommand(),
 		actions.ParseCommand(),
+		actions.CommentCommand(),
 		actions.JSONCommand(),
 		actions.YAMLCommand(),
 		actions.RenderCommand(),

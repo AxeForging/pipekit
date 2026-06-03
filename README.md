@@ -84,6 +84,7 @@ More end-to-end recipes → **[docs/EXAMPLES.md](docs/EXAMPLES.md)**
 | `changelog` | Generate release notes from git commit ranges | [↗](docs/COMMANDS.md#changelog) |
 | `config` | Resolve env-specific config maps; map branches to environments | [↗](docs/COMMANDS.md#config) |
 | `parse` | Pull fenced code blocks / YAML / frontmatter out of issue bodies, PR comments, markdown | [↗](docs/COMMANDS.md#parse) |
+| `comment` | Render, inspect, select, and amend hidden-anchor PR comments | [↗](docs/COMMANDS.md#comment) |
 | `json` / `yaml` | Get / set / del / deep-merge / convert / pretty / table on JSON, YAML, TOML, CSV | [↗](docs/COMMANDS.md#json) |
 | `render` | Render Go templates with a sprig-like FuncMap and stacked `--values` files | [↗](docs/COMMANDS.md#render) |
 | `exec` | Unified retry + mask + tee + timeout command runner | [↗](docs/COMMANDS.md#exec) |

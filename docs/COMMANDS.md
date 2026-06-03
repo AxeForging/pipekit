@@ -845,6 +845,92 @@ Supports both `--- ... ---` (YAML) and `+++ ... +++` (TOML) delimiters. Common i
 
 ---
 
+## comment
+
+Render and manage markdown comments with hidden anchors. This is useful for PR bot comments where the visible body should be readable, but automation needs a stable marker to find and update the right comment later.
+
+Hidden anchors use HTML comments, so GitHub keeps them in the API body but does not render them:
+
+```md
+<!-- pipekit:preview -->
+```
+
+<details>
+<summary><strong><code>comment render</code></strong> — create an anchored comment body</summary>
+
+```sh
+pipekit comment render --anchor preview --body-file preview.md > comment.md
+
+printf '## Preview\n\nReady\n' \
+  | pipekit comment render --anchor preview
+```
+
+| Flag | Description |
+|---|---|
+| `--anchor, -a` | Hidden anchor name |
+| `--body-file` | Read visible markdown body from a file |
+| `--output, -o` | Write output to a file |
+
+</details>
+
+<details>
+<summary><strong><code>comment fence</code></strong> — render safe fenced code blocks</summary>
+
+```sh
+pipekit comment fence --language yaml values.yaml
+
+cat script.js | pipekit comment fence --language js
+```
+
+The fence is automatically lengthened when the content itself contains triple backticks.
+
+</details>
+
+<details>
+<summary><strong><code>comment inspect</code></strong> — read anchors and code blocks</summary>
+
+```sh
+pipekit comment inspect comment.md
+
+gh api repos/OWNER/REPO/issues/123/comments \
+  | pipekit comment inspect
+```
+
+Outputs JSON with comment metadata, hidden anchors, and fenced code blocks.
+
+</details>
+
+<details>
+<summary><strong><code>comment select</code></strong> — select a comment by anchor</summary>
+
+```sh
+gh api repos/OWNER/REPO/issues/123/comments \
+  | pipekit comment select --anchor preview --format id
+
+gh api repos/OWNER/REPO/issues/123/comments \
+  | pipekit comment select --anchor preview --format body > existing.md
+```
+
+| Flag | Description |
+|---|---|
+| `--anchor, -a` | Hidden anchor to search for |
+| `--format, -f` | `json`, `id`, `body`, or `url` |
+
+</details>
+
+<details>
+<summary><strong><code>comment amend</code></strong> — replace visible content after an anchor</summary>
+
+```sh
+pipekit comment amend existing.md --anchor preview --body-file preview.md > updated.md
+```
+
+If the input does not contain the anchor, a fresh anchored comment is created.
+
+</details>
+
+---
+
 ## json
 
 Read, query, mutate, deep-merge, convert, and pretty-print JSON. The `yaml` command is identical except the default format for stdin is YAML — both share the same subcommands and per-file decoding still uses the file's extension (`.json`, `.yaml`, `.toml`, `.csv`).

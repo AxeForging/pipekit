@@ -65,6 +65,15 @@ func RenderAnchoredComment(anchor, body string) (string, error) {
 	return marker + "\n\n" + strings.TrimRight(body, "\n") + "\n", nil
 }
 
+// GitHubCommentPayload returns a JSON object suitable for the issue comments API.
+func GitHubCommentPayload(body string) (string, error) {
+	data, err := json.Marshal(map[string]string{"body": body})
+	if err != nil {
+		return "", fmt.Errorf("marshaling comment payload: %w", err)
+	}
+	return string(data), nil
+}
+
 // AmendAnchoredComment replaces everything after a hidden anchor with body.
 // If the anchor is not present, it returns a new anchored comment.
 func AmendAnchoredComment(existing, anchor, body string) (string, error) {

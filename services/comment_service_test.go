@@ -56,6 +56,17 @@ func TestRenderAnchoredComment(t *testing.T) {
 	}
 }
 
+func TestGitHubCommentPayloadEscapesMarkdownBody(t *testing.T) {
+	got, err := GitHubCommentPayload("line 1\n```yaml\nx: y\n```\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := `{"body":"line 1\n` + "```yaml\\nx: y\\n```" + `\n"}`
+	if got != want {
+		t.Fatalf("unexpected payload: %s", got)
+	}
+}
+
 func TestAmendAnchoredCommentReplacesBodyAfterAnchor(t *testing.T) {
 	existing := "prefix\n<!-- pipekit:preview -->\n\nold body\n```yaml\nold: true\n```\n"
 	got, err := AmendAnchoredComment(existing, "preview", "new body\n")

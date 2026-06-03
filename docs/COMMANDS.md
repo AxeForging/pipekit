@@ -901,6 +901,26 @@ Outputs JSON with comment metadata, hidden anchors, and fenced code blocks.
 </details>
 
 <details>
+<summary><strong><code>comment payload</code></strong> — create a GitHub comment API payload</summary>
+
+```sh
+pipekit comment payload comment.md > payload.json
+
+gh api \
+  --method POST \
+  repos/OWNER/REPO/issues/123/comments \
+  --input payload.json
+```
+
+Outputs JSON in the shape expected by GitHub's issue comments API:
+
+```json
+{"body":"...markdown..."}
+```
+
+</details>
+
+<details>
 <summary><strong><code>comment select</code></strong> — select a comment by anchor</summary>
 
 ```sh

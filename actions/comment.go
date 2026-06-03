@@ -69,6 +69,24 @@ func CommentCommand() cli.Command {
 				},
 			},
 			{
+				Name:  "payload",
+				Usage: "render stdin or a file as a GitHub comment API payload",
+				Flags: []cli.Flag{
+					cli.StringFlag{Name: "output, o", Usage: "write output to this file"},
+				},
+				Action: func(c *cli.Context) error {
+					body, err := readInputFileOrStdin(c)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					out, err := services.GitHubCommentPayload(string(body))
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					return writeCommentOutput(c, out+"\n")
+				},
+			},
+			{
 				Name:  "amend",
 				Usage: "replace the visible body after a hidden anchor",
 				Flags: []cli.Flag{

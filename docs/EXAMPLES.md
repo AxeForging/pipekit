@@ -304,10 +304,11 @@ Render a readable PR comment with a hidden anchor, then let `gh` create or updat
       > comments.json
 
     if pipekit comment select comments.json --anchor preview-deploy --format id > comment-id.txt; then
+      pipekit comment payload preview-comment.md > payload.json
       gh api \
         --method PATCH \
         repos/${{ github.repository }}/issues/comments/$(cat comment-id.txt) \
-        --field body="$(cat preview-comment.md)"
+        --input payload.json
     else
       gh pr comment ${{ github.event.pull_request.number }} --body-file preview-comment.md
     fi

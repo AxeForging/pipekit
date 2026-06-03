@@ -1,0 +1,137 @@
+name: Comment Sandbox
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_number:
+        description: "Issue or PR number to update when apply=true"
+        required: false
+        default: "5"
+      anchor:
+        description: "Hidden pipekit anchor to render/select/update"
+        required: true
+        default: "pipekit-comment-sandbox"
+      apply:
+        description: "Create or update the comment on the target issue/PR"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  sandbox:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build pipekit
+        run: make build
+
+      - name: Render sandbox comment
+        env:
+          TARGET_NUMBER: ${{ inputs.target_number }}
+          ANCHOR: ${{ inputs.anchor }}
+        run: |
+          cat > sandbox-body.md <<EOF
+          ## pipekit comment sandbox
+
+          This comment was rendered by the manual Comment Sandbox workflow.
+
+          - workflow: ${GITHUB_WORKFLOW}
+          - run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - ref: ${GITHUB_REF_NAME}
+          - sha: ${GITHUB_SHA}
+          - target: ${TARGET_NUMBER}
+          - anchor: ${ANCHOR}
+
+          EOF
+
+          cat > sandbox-data.yaml <<EOF
+          workflow: ${GITHUB_WORKFLOW}
+          run_id: ${GITHUB_RUN_ID}
+          target_number: "${TARGET_NUMBER}"
+          anchor: "${ANCHOR}"
+          ref: ${GITHUB_REF_NAME}
+          sha: ${GITHUB_SHA}
+          EOF
+
+          ./dist/pipekit comment fence --language yaml sandbox-data.yaml >> sandbox-body.md
+          ./dist/pipekit comment render \
+            --anchor "${ANCHOR}" \
+            --body-file sandbox-body.md \
+            --output sandbox-comment.md
+
+      - name: Inspect rendered comment
+        run: |
+          ./dist/pipekit comment inspect sandbox-comment.md > sandbox-inspect.json
+          ./dist/pipekit assert file-exists sandbox-inspect.json sandbox-comment.md
+          ./dist/pipekit parse extract-block sandbox-comment.md --language yaml --index 0 --content-only \
+            > sandbox-block.yaml
+          test -s sandbox-block.yaml
+
+      - name: Exercise select and amend locally
+        env:
+          ANCHOR: ${{ inputs.anchor }}
+        run: |
+          cat > comments.json <<EOF
+          [
+            {"id": 1001, "html_url": "https://example.test/1001", "user": {"login": "someone"}, "body": "plain comment"},
+            {"id": 1002, "html_url": "https://example.test/1002", "user": {"login": "github-actions[bot]"}, "body": ""}
+          ]
+          EOF
+          ./dist/pipekit json set comments.json \
+            --path ".1.body" \
+            --value "$(cat sandbox-comment.md)" \
+            --in-place
+
+          ./dist/pipekit comment select comments.json --anchor "${ANCHOR}" --format id > selected-id.txt
+          test "$(cat selected-id.txt)" = "1002"
+
+          ./dist/pipekit comment select comments.json --anchor "${ANCHOR}" --format body > selected-body.md
+          printf '## amended sandbox body\n\nupdated locally\n' > amended-body.md
+          ./dist/pipekit comment amend selected-body.md \
+            --anchor "${ANCHOR}" \
+            --body-file amended-body.md \
+            --output amended-comment.md
+          ./dist/pipekit comment inspect amended-comment.md > amended-inspect.json
+
+      - name: Upsert sandbox issue or PR comment
+        if: ${{ inputs.apply }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_NUMBER: ${{ inputs.target_number }}
+          ANCHOR: ${{ inputs.anchor }}
+        run: |
+          if [ -z "${TARGET_NUMBER}" ]; then
+            echo "target_number is required when apply=true" >&2
+            exit 1
+          fi
+
+          gh api "repos/${GITHUB_REPOSITORY}/issues/${TARGET_NUMBER}/comments" > remote-comments.json
+
+          ./dist/pipekit comment payload sandbox-comment.md --output comment-payload.json
+
+          if ./dist/pipekit comment select remote-comments.json --anchor "${ANCHOR}" --format id > remote-comment-id.txt; then
+            gh api \
+              --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/issues/comments/$(cat remote-comment-id.txt)" \
+              --input comment-payload.json
+          else
+            gh api \
+              --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${TARGET_NUMBER}/comments" \
+              --input comment-payload.json
+          fi

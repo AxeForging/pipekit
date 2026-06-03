@@ -1,6 +1,5 @@
-# pipekit
-
 <div align="center">
+  <img src="docs/assets/pipekit-wordmark.png" alt="Pipekit — CI/CD pipeline toolkit" width="520">
   <p>
     <img src="https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat-square&logo=go" alt="Go Version">
     <img src="https://img.shields.io/badge/OS-Linux%20%7C%20macOS%20%7C%20Windows-darkblue?style=flat-square&logo=windows" alt="OS Support">
@@ -84,6 +83,7 @@ More end-to-end recipes → **[docs/EXAMPLES.md](docs/EXAMPLES.md)**
 | `changelog` | Generate release notes from git commit ranges | [↗](docs/COMMANDS.md#changelog) |
 | `config` | Resolve env-specific config maps; map branches to environments | [↗](docs/COMMANDS.md#config) |
 | `parse` | Pull fenced code blocks / YAML / frontmatter out of issue bodies, PR comments, markdown | [↗](docs/COMMANDS.md#parse) |
+| `comment` | Render, inspect, select, and amend hidden-anchor PR comments | [↗](docs/COMMANDS.md#comment) |
 | `json` / `yaml` | Get / set / del / deep-merge / convert / pretty / table on JSON, YAML, TOML, CSV | [↗](docs/COMMANDS.md#json) |
 | `render` | Render Go templates with a sprig-like FuncMap and stacked `--values` files | [↗](docs/COMMANDS.md#render) |
 | `exec` | Unified retry + mask + tee + timeout command runner | [↗](docs/COMMANDS.md#exec) |

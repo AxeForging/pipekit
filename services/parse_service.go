@@ -17,9 +17,6 @@ type CodeBlock struct {
 	Index    int    `json:"index"`
 }
 
-// fencedBlockRegex matches ``` or ~~~ fenced code blocks with optional language identifier.
-var fencedBlockRegex = regexp.MustCompile("(?m)^(?:```|~~~)(\\S*)\\s*\\n((?:.|\\n)*?)^(?:```|~~~)\\s*$")
-
 // ExtractCodeBlocks extracts all fenced code blocks from markdown/text input.
 // If language is non-empty, only blocks matching that language are returned.
 // Language matching is case-insensitive.
@@ -29,30 +26,14 @@ func ExtractCodeBlocks(r io.Reader, language string) ([]CodeBlock, error) {
 		return nil, fmt.Errorf("reading input: %w", err)
 	}
 
-	matches := fencedBlockRegex.FindAllSubmatch(data, -1)
-	if len(matches) == 0 {
-		return nil, nil
-	}
-
+	allBlocks := scanCodeBlocks(string(data))
 	var blocks []CodeBlock
-	idx := 0
-	for _, match := range matches {
-		lang := strings.TrimSpace(string(match[1]))
-		content := string(match[2])
-
-		// Remove trailing newline from content
-		content = strings.TrimRight(content, "\n")
-
-		if language != "" && !strings.EqualFold(lang, language) {
+	for _, block := range allBlocks {
+		if language != "" && !strings.EqualFold(block.Language, language) {
 			continue
 		}
-
-		blocks = append(blocks, CodeBlock{
-			Language: lang,
-			Content:  content,
-			Index:    idx,
-		})
-		idx++
+		block.Index = len(blocks)
+		blocks = append(blocks, block)
 	}
 
 	return blocks, nil
@@ -66,23 +47,16 @@ func ExtractAndParseYAML(r io.Reader) ([]map[string]interface{}, error) {
 		return nil, fmt.Errorf("reading input: %w", err)
 	}
 
-	matches := fencedBlockRegex.FindAllSubmatch(data, -1)
-	if len(matches) == 0 {
-		return nil, nil
-	}
-
 	var results []map[string]interface{}
-	for _, match := range matches {
-		lang := strings.ToLower(strings.TrimSpace(string(match[1])))
-		content := string(match[2])
-
+	for _, block := range scanCodeBlocks(string(data)) {
+		lang := strings.ToLower(strings.TrimSpace(block.Language))
 		// Only process yaml/yml blocks (or untagged blocks)
 		if lang != "" && lang != "yaml" && lang != "yml" {
 			continue
 		}
 
 		var parsed map[string]interface{}
-		if err := yaml.Unmarshal([]byte(content), &parsed); err != nil {
+		if err := yaml.Unmarshal([]byte(block.Content), &parsed); err != nil {
 			continue // skip blocks that don't parse as YAML
 		}
 		if parsed != nil {
@@ -91,6 +65,72 @@ func ExtractAndParseYAML(r io.Reader) ([]map[string]interface{}, error) {
 	}
 
 	return results, nil
+}
+
+func scanCodeBlocks(input string) []CodeBlock {
+	lines := strings.Split(input, "\n")
+	var blocks []CodeBlock
+	for i := 0; i < len(lines); i++ {
+		fenceChar, fenceLen, lang, ok := parseOpeningFence(lines[i])
+		if !ok {
+			continue
+		}
+
+		contentStart := i + 1
+		for j := contentStart; j < len(lines); j++ {
+			if isClosingFence(lines[j], fenceChar, fenceLen) {
+				content := strings.Join(lines[contentStart:j], "\n")
+				blocks = append(blocks, CodeBlock{
+					Language: lang,
+					Content:  strings.TrimRight(content, "\n"),
+					Index:    len(blocks),
+				})
+				i = j
+				break
+			}
+		}
+	}
+	return blocks
+}
+
+func parseOpeningFence(line string) (rune, int, string, bool) {
+	trimmed := strings.TrimLeft(line, " \t")
+	if trimmed == "" {
+		return 0, 0, "", false
+	}
+	fenceChar := rune(trimmed[0])
+	if fenceChar != '`' && fenceChar != '~' {
+		return 0, 0, "", false
+	}
+	fenceLen := countFenceRun(trimmed, fenceChar)
+	if fenceLen < 3 {
+		return 0, 0, "", false
+	}
+	rest := strings.TrimSpace(trimmed[fenceLen:])
+	if strings.ContainsRune(rest, fenceChar) {
+		return 0, 0, "", false
+	}
+	return fenceChar, fenceLen, rest, true
+}
+
+func isClosingFence(line string, fenceChar rune, fenceLen int) bool {
+	trimmed := strings.TrimLeft(line, " \t")
+	run := countFenceRun(trimmed, fenceChar)
+	if run < fenceLen {
+		return false
+	}
+	return strings.TrimSpace(trimmed[run:]) == ""
+}
+
+func countFenceRun(s string, fenceChar rune) int {
+	count := 0
+	for _, r := range s {
+		if r != fenceChar {
+			break
+		}
+		count++
+	}
+	return count
 }
 
 // frontmatterRegex matches a YAML or TOML frontmatter block at the very
@@ -110,7 +150,7 @@ func ExtractFrontmatter(r io.Reader) ([]byte, string, error) {
 		return nil, "", nil
 	}
 	body := data[loc[2]:loc[3]]
-	delim := string(data[loc[0]:loc[0]+3])
+	delim := string(data[loc[0] : loc[0]+3])
 	if delim == "+++" {
 		return body, "toml", nil
 	}

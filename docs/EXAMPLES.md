@@ -280,6 +280,40 @@ image: ghcr.io/me/app:v1.2.3
 
 …sets `ENV=production`, `REPLICAS=3`, `IMAGE=ghcr.io/me/app:v1.2.3`.
 
+### Updatable PR comments
+
+Render a readable PR comment with a hidden anchor, then let `gh` create or update the matching comment.
+
+```yaml
+- name: Build preview body
+  run: |
+    {
+      echo "## Preview deployment"
+      echo
+      echo "URL: https://preview.example.com"
+      echo
+      pipekit comment fence --language yaml preview.yaml
+    } > preview-body.md
+    pipekit comment render --anchor preview-deploy --body-file preview-body.md > preview-comment.md
+
+- name: Upsert PR comment
+  env:
+    GH_TOKEN: ${{ github.token }}
+  run: |
+    gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+      > comments.json
+
+    if pipekit comment select comments.json --anchor preview-deploy --format id > comment-id.txt; then
+      pipekit comment payload preview-comment.md > payload.json
+      gh api \
+        --method PATCH \
+        repos/${{ github.repository }}/issues/comments/$(cat comment-id.txt) \
+        --input payload.json
+    else
+      gh pr comment ${{ github.event.pull_request.number }} --body-file preview-comment.md
+    fi
+```
+
 ### Preview deployments
 
 Generate a clean, k8s-friendly slug for the preview environment per branch.

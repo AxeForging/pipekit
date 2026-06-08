@@ -53,6 +53,9 @@ jobs:
           command: generate
           api-key: ${{ secrets.GEMINI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # If GEMINI_API_KEY is unset/invalid the LLM step fails and releaseforge
+          # falls back to git commit-log notes, so the release still succeeds.
+          use-git-fallback: "true"
 
       - name: Create and push tag
         run: |

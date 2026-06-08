@@ -135,6 +135,116 @@ func TestE2E_JSONGetSetMerge(t *testing.T) {
 	}
 }
 
+// TestE2E_YAMLSetPreserve verifies that `--preserve` performs a surgical in-place
+// edit: only the targeted value changes, while comments, key order, and quoting
+// of every other line are left byte-for-byte intact.
+func TestE2E_YAMLSetPreserve(t *testing.T) {
+	dir := t.TempDir()
+	values := filepath.Join(dir, "values.yaml")
+	original := `# Helm values
+image:
+  repository: myapp # do not touch
+  tag: "v1.0.0"
+replicas: 3
+`
+	if err := os.WriteFile(values, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, code := runPipekit(t,
+		[]string{"yaml", "set", values, "--path", ".image.tag", "--value", "v2.0.0", "--in-place", "--preserve"}, "")
+	if code != 0 {
+		t.Fatalf("preserve set exit %d, stderr: %s", code, stderr)
+	}
+	got, _ := os.ReadFile(values)
+	gotStr := string(got)
+
+	for _, want := range []string{"# Helm values", "repository: myapp # do not touch", `tag: "v2.0.0"`, "replicas: 3"} {
+		if !strings.Contains(gotStr, want) {
+			t.Errorf("preserve lost %q:\n%s", want, gotStr)
+		}
+	}
+	if strings.Contains(gotStr, "v1.0.0") {
+		t.Errorf("old value should be gone:\n%s", gotStr)
+	}
+
+	// Backward-compat sanity: the same edit WITHOUT --preserve still works,
+	// just normalizing formatting (comments dropped).
+	if err := os.WriteFile(values, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, code = runPipekit(t,
+		[]string{"yaml", "set", values, "--path", ".image.tag", "--value", "v2.0.0", "--in-place"}, "")
+	if code != 0 {
+		t.Fatalf("legacy set exit %d", code)
+	}
+	legacy, _ := os.ReadFile(values)
+	if !strings.Contains(string(legacy), "v2.0.0") {
+		t.Errorf("legacy set failed:\n%s", legacy)
+	}
+}
+
+// TestE2E_JSONDelPreserve verifies surgical key removal keeps surrounding JSON
+// formatting intact.
+func TestE2E_JSONDelPreserve(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	original := "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3\n}\n"
+	if err := os.WriteFile(cfg, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code := runPipekit(t,
+		[]string{"json", "del", cfg, "--path", ".b", "--in-place", "--preserve"}, "")
+	if code != 0 {
+		t.Fatalf("preserve del exit %d, stderr: %s", code, stderr)
+	}
+	want := "{\n  \"a\": 1,\n  \"c\": 3\n}\n"
+	if got, _ := os.ReadFile(cfg); string(got) != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestE2E_JSONSetPreserveInsert verifies `set --preserve` can add a new key to
+// an existing object, formatting-matched to its siblings.
+func TestE2E_JSONSetPreserveInsert(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfg, []byte("{\n  \"a\": 1\n}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, stderr, code := runPipekit(t,
+		[]string{"json", "set", cfg, "--path", ".b", "--json-value", "2", "--in-place", "--preserve"}, "")
+	if code != 0 {
+		t.Fatalf("insert exit %d, stderr: %s", code, stderr)
+	}
+	want := "{\n  \"a\": 1,\n  \"b\": 2\n}\n"
+	if got, _ := os.ReadFile(cfg); string(got) != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestE2E_PreservePreservesFileMode verifies the atomic in-place write keeps the
+// original file's permission bits.
+func TestE2E_PreservePreservesFileMode(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "values.yaml")
+	if err := os.WriteFile(f, []byte("tag: v1\n"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	_, _, code := runPipekit(t,
+		[]string{"yaml", "set", f, "--path", ".tag", "--value", "v2", "--in-place", "--preserve"}, "")
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	info, err := os.Stat(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0640 {
+		t.Errorf("mode changed: got %o want 640", info.Mode().Perm())
+	}
+}
+
 func TestE2E_RenderFile(t *testing.T) {
 	dir := t.TempDir()
 	tmpl := filepath.Join(dir, "v.tpl")

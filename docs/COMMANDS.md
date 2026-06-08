@@ -978,7 +978,29 @@ pipekit json get values.yaml --path '.image.tag' --raw --to-github-output IMAGE_
 pipekit json set values.yaml --path '.image.tag' --value 'v2.0.0' --in-place
 pipekit json set config.json --path '.flags' --json-value '["a","b"]' --pretty
 pipekit json del values.yaml --path '.legacy' --in-place
+
+# Surgical edit — change ONLY the target, keep comments/key-order/quoting/spacing
+pipekit yaml set values.yaml --path '.image.tag' --value 'v2.0.0' --in-place --preserve
+pipekit json set config.json --path '.newKey' --json-value '{"on":true}' --in-place --preserve  # insert
+pipekit json del config.json --path '.legacy' --in-place --preserve
 ```
+
+By default `set`/`del` parse the document and re-serialize it, which normalizes
+formatting (comments dropped, keys reordered, re-indented). Add `--preserve`
+(`-P`) for a surgical, byte-level edit that touches **only** the targeted node
+and leaves every other byte identical — comments (including their column
+alignment), key order, quoting style, indentation, and blank lines are all kept.
+Ideal for hand-maintained files like Helm `values.yaml`.
+
+- Supported with `--preserve`: **yaml**, **json** (toml/csv return a clear error).
+- Editing an existing value, deleting a key, and **inserting a new key into an
+  existing object** are all supported and formatting-matched to siblings.
+- In-place writes are **atomic** (temp file + fsync + rename) and keep the
+  original file's permission bits, so a crash mid-write can't truncate the file.
+- Safety: every YAML splice is re-parsed and validated; if the result wouldn't
+  hold the intended value (e.g. a type-ambiguous edit like setting a plain
+  numeric field to a numeric string) it automatically falls back to the safe
+  re-encode path rather than risk a wrong edit.
 
 </details>
 

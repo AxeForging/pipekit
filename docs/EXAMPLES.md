@@ -426,7 +426,8 @@ kubectl apply -f /tmp/deployment.yaml
 
 ```sh
 # Bump only the .image.tag in values.yaml without touching anything else
-pipekit yaml set chart/values.yaml --path '.image.tag' --value 'v1.2.3' --in-place
+# (--preserve keeps comments, key order, and quoting exactly as-is)
+pipekit yaml set chart/values.yaml --path '.image.tag' --value 'v1.2.3' --in-place --preserve
 
 # Or: deep-merge a per-env overlay
 pipekit yaml merge chart/values.yaml chart/values.prod.yaml --output /tmp/merged.yaml

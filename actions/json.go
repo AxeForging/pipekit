@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/AxeForging/pipekit/services"
 
@@ -82,6 +83,7 @@ func dataSetCmd(def services.DataFormat) cli.Command {
 			cli.StringFlag{Name: "json-value, j", Usage: "JSON-encoded value (object/array/number/bool)"},
 			cli.BoolFlag{Name: "in-place, i", Usage: "write back to the file (default: stdout)"},
 			cli.BoolFlag{Name: "pretty", Usage: "pretty-print output"},
+			cli.BoolFlag{Name: "preserve, P", Usage: "surgical edit: keep comments/formatting, change only the target (yaml, json)"},
 		},
 		Action: func(c *cli.Context) error {
 			file, err := firstArgOrErr(c, "FILE")
@@ -99,6 +101,12 @@ func dataSetCmd(def services.DataFormat) cli.Command {
 				}
 			} else {
 				newVal = c.String("value")
+			}
+
+			if c.Bool("preserve") {
+				return writePreserved(c, file, def, c.Bool("in-place"), func(data []byte, format services.DataFormat) ([]byte, error) {
+					return services.SetPreserving(data, format, path, newVal)
+				})
 			}
 
 			doc, _, err := loadFileWithDefault(file, def)
@@ -123,6 +131,7 @@ func dataDelCmd(def services.DataFormat) cli.Command {
 			cli.StringFlag{Name: "path, p", Usage: "path to delete"},
 			cli.BoolFlag{Name: "in-place, i"},
 			cli.BoolFlag{Name: "pretty"},
+			cli.BoolFlag{Name: "preserve, P", Usage: "surgical edit: keep comments/formatting, remove only the target (yaml, json)"},
 		},
 		Action: func(c *cli.Context) error {
 			file, err := firstArgOrErr(c, "FILE")
@@ -133,6 +142,13 @@ func dataDelCmd(def services.DataFormat) cli.Command {
 			if path == "" {
 				return cli.NewExitError("--path required", 1)
 			}
+
+			if c.Bool("preserve") {
+				return writePreserved(c, file, def, c.Bool("in-place"), func(data []byte, format services.DataFormat) ([]byte, error) {
+					return services.DelPreserving(data, format, path)
+				})
+			}
+
 			doc, _, err := loadFileWithDefault(file, def)
 			if err != nil {
 				return err
@@ -353,6 +369,72 @@ func writeResult(c *cli.Context, srcPath string, doc interface{}, def services.D
 	fmt.Print(string(data))
 	if format == services.FormatJSON {
 		fmt.Println()
+	}
+	return nil
+}
+
+// writePreserved reads the source file's raw bytes, applies a formatting-
+// preserving edit, and either writes back in place or prints to stdout. Unlike
+// writeResult it never round-trips through Decode/Encode, so the file is changed
+// only where the edit lands.
+func writePreserved(c *cli.Context, srcPath string, def services.DataFormat, inPlace bool, edit func([]byte, services.DataFormat) ([]byte, error)) error {
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		return err
+	}
+	format := services.DetectFormat(srcPath)
+	if format == "" {
+		format = def
+	}
+	out, err := edit(data, format)
+	if err != nil {
+		return err
+	}
+	if inPlace {
+		return atomicWriteFile(srcPath, out)
+	}
+	fmt.Print(string(out))
+	return nil
+}
+
+// atomicWriteFile writes data to a temp file in the same directory, fsyncs it,
+// then renames it over the target. The rename is atomic on POSIX, so a crash or
+// kill mid-write leaves the original file fully intact rather than truncated.
+// The original file's permission bits are preserved.
+func atomicWriteFile(path string, data []byte) error {
+	mode := os.FileMode(0644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".pipekit-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpName) }
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		cleanup()
+		return err
 	}
 	return nil
 }

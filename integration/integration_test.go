@@ -550,6 +550,13 @@ func TestE2E_HTTPGetAndChain(t *testing.T) {
 	}
 	expectAll(t, stdout, `"token": "abc123"`, `"deploy_id": "42"`, `"statusCode": 201`)
 	expectAll(t, stderr, "auth: HTTP 200", "deploy: HTTP 201")
+
+	stdout, stderr, code = runPipekit(t,
+		[]string{"http", "chain", "-", "--expect-status", "200"}, body)
+	if code != 0 {
+		t.Fatalf("http chain stdin exit %d stderr=%s stdout=%s", code, stderr, stdout)
+	}
+	expectAll(t, stdout, `"token": "abc123"`, `"deploy_id": "42"`, `"statusCode": 201`)
 }
 
 func TestE2E_HTTPRejectsInvalidExpectedStatus(t *testing.T) {

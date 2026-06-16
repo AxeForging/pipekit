@@ -101,6 +101,27 @@ steps:
 pipekit http chain flow.yaml --expect-status 200 --verbose
 ```
 
+For short one-off chains, pass the plan inline:
+
+```sh
+pipekit http chain - --expect-status 200 <<'YAML'
+steps:
+  - name: auth
+    method: POST
+    url: https://api.example.com/token
+    json: '{"client":"ci"}'
+    capture:
+      token: .access_token
+  - name: deploy
+    method: POST
+    url: https://api.example.com/deploys/{{token}}
+    headers:
+      Authorization: Bearer {{token}}
+    json: '{"ref":"main"}'
+    expectStatus: [201]
+YAML
+```
+
 </details>
 
 <details>

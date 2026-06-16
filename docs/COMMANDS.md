@@ -1182,9 +1182,27 @@ pipekit http post https://uploads.example.com/artifacts \
 
 # Chain dependent requests with captures and interpolation
 pipekit http chain flow.yaml --expect-status 200 --verbose
+
+# The same plan can be passed inline with a heredoc
+pipekit http chain - --expect-status 200 <<'YAML'
+steps:
+  - name: auth
+    method: POST
+    url: https://api.example.com/token
+    json: '{"client":"ci"}'
+    capture:
+      token: .access_token
+  - name: deploy
+    method: POST
+    url: https://api.example.com/deploys/{{token}}
+    headers:
+      Authorization: Bearer {{token}}
+    json: '{"ref":"main"}'
+    expectStatus: [201]
+YAML
 ```
 
-`http chain` runs each step in order. Values captured from a response body with jq-style paths are stored as variables, then reused in later `url`, `headers`, `data`, and `json` fields with `{{name}}` interpolation. The command prints JSON containing final `vars` and per-step status codes.
+`http chain` runs each step in order. Pass a plan file, or use `-` to read a JSON/YAML plan from stdin. Values captured from a response body with jq-style paths are stored as variables, then reused in later `url`, `headers`, `data`, and `json` fields with `{{name}}` interpolation. The command prints JSON containing final `vars` and per-step status codes.
 
 `flow.yaml`:
 

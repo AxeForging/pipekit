@@ -3,6 +3,7 @@ package actions
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -140,9 +141,10 @@ func httpChainCommand() cli.Command {
 	return cli.Command{
 		Name:      "chain",
 		Usage:     "run a sequence of dependent HTTP requests from a JSON/YAML plan",
-		ArgsUsage: "PLAN_FILE",
+		ArgsUsage: "PLAN_FILE|-",
 		Flags: []cli.Flag{
 			cli.StringSliceFlag{Name: "header, H", Usage: "request header as 'Name: value' applied to every step"},
+			cli.StringFlag{Name: "from", Usage: "plan format override for stdin or extensionless files: json or yaml"},
 			cli.StringFlag{Name: "expect-status", Usage: "default acceptable HTTP status codes for steps"},
 			cli.StringFlag{Name: "timeout", Value: "30s", Usage: "default request timeout"},
 			cli.IntFlag{Name: "retry", Value: 1, Usage: "number of attempts per step"},
@@ -173,13 +175,9 @@ func httpChainCommand() cli.Command {
 			if err != nil {
 				return cli.NewExitError(err.Error(), 1)
 			}
-			data, err := os.ReadFile(file)
+			data, format, err := readHTTPChainPlanInput(c, file)
 			if err != nil {
 				return cli.NewExitError(err.Error(), 1)
-			}
-			format := services.DetectFormat(file)
-			if format == "" {
-				format = services.FormatJSON
 			}
 			doc, err := services.Decode(data, format)
 			if err != nil {
@@ -217,6 +215,32 @@ func httpChainCommand() cli.Command {
 			return nil
 		},
 	}
+}
+
+func readHTTPChainPlanInput(c *cli.Context, file string) ([]byte, services.DataFormat, error) {
+	format := services.FormatYAML
+	if from := c.String("from"); from != "" {
+		format = services.FormatString(from)
+	} else if file != "-" {
+		if detected := services.DetectFormat(file); detected != "" {
+			format = detected
+		}
+	}
+	if file == "-" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, "", fmt.Errorf("reading stdin: %w", err)
+		}
+		if len(strings.TrimSpace(string(data))) == 0 {
+			return nil, "", fmt.Errorf("empty HTTP chain plan on stdin")
+		}
+		return data, format, nil
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, "", err
+	}
+	return data, format, nil
 }
 
 func parseHTTPStatusList(value string) ([]int, error) {

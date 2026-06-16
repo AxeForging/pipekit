@@ -543,6 +543,7 @@ func TestE2E_HTTPGetAndChain(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Plain file-backed chain plan.
 	stdout, stderr, code = runPipekit(t,
 		[]string{"http", "chain", plan, "--expect-status", "200", "--verbose"}, "")
 	if code != 0 {
@@ -551,12 +552,24 @@ func TestE2E_HTTPGetAndChain(t *testing.T) {
 	expectAll(t, stdout, `"token": "abc123"`, `"deploy_id": "42"`, `"statusCode": 201`)
 	expectAll(t, stderr, "auth: HTTP 200", "deploy: HTTP 201")
 
+	// Heredoc/stdin-style chain plan (`pipekit http chain - <<'YAML'`).
 	stdout, stderr, code = runPipekit(t,
 		[]string{"http", "chain", "-", "--expect-status", "200"}, body)
 	if code != 0 {
 		t.Fatalf("http chain stdin exit %d stderr=%s stdout=%s", code, stderr, stdout)
 	}
 	expectAll(t, stdout, `"token": "abc123"`, `"deploy_id": "42"`, `"statusCode": 201`)
+}
+
+func TestE2E_HTTPChainRejectsEmptyStdinPlan(t *testing.T) {
+	_, stderr, code := runPipekit(t,
+		[]string{"http", "chain", "-"}, "   \n")
+	if code == 0 {
+		t.Fatal("expected empty stdin plan to fail")
+	}
+	if !strings.Contains(stderr, "empty HTTP chain plan on stdin") {
+		t.Fatalf("stderr = %q", stderr)
+	}
 }
 
 func TestE2E_HTTPRejectsInvalidExpectedStatus(t *testing.T) {

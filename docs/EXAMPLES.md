@@ -57,6 +57,67 @@ pipekit wait url http://localhost:8080/healthz --timeout 150s
 </details>
 
 <details>
+<summary><strong>HTTP API → JSON output without curl + jq</strong></summary>
+
+```sh
+# BEFORE
+tag=$(curl -fsSL https://api.example.com/releases/latest | jq -r '.tag_name')
+echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+# AFTER
+pipekit http get https://api.example.com/releases/latest \
+  --expect-status 200 \
+  --jq .tag_name \
+  --raw \
+  --to-github-output tag
+```
+
+</details>
+
+<details>
+<summary><strong>Dependent API calls without temp files</strong></summary>
+
+```yaml
+# flow.yaml
+steps:
+  - name: auth
+    method: POST
+    url: https://api.example.com/token
+    json: '{"client":"ci"}'
+    capture:
+      token: .access_token
+  - name: deploy
+    method: POST
+    url: https://api.example.com/deploys/{{token}}
+    headers:
+      Authorization: Bearer {{token}}
+    json: '{"ref":"main"}'
+    expectStatus: [201]
+    capture:
+      deploy_id: .id
+```
+
+```sh
+pipekit http chain flow.yaml --expect-status 200 --verbose
+```
+
+</details>
+
+<details>
+<summary><strong>Cross-platform release archive</strong></summary>
+
+```sh
+# BEFORE
+tar --zstd -cf dist/app.tar.zst bin/app README.md
+
+# AFTER
+pipekit archive pack dist/app.tar.zst bin/app README.md
+pipekit archive list dist/app.tar.zst
+```
+
+</details>
+
+<details>
 <summary><strong>Retry a flaky command</strong></summary>
 
 ```sh
@@ -541,6 +602,8 @@ pipekit diff dirs --base origin/main \
 make build-all
 
 pipekit artifact assert "dist/pipekit-*"
+pipekit archive pack dist/release.tar.zst dist/pipekit-* README.md
+pipekit archive list dist/release.tar.zst
 pipekit checksum files dist/pipekit-* --output dist/checksums.txt
 pipekit checksum verify dist/checksums.txt
 pipekit artifact manifest "dist/pipekit-*" "dist/checksums.txt" \

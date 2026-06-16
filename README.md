@@ -87,6 +87,7 @@ More end-to-end recipes → **[docs/EXAMPLES.md](docs/EXAMPLES.md)**
 | `cache-key` | Deterministic SHA256 cache keys from files / globs / composite parts | [↗](docs/COMMANDS.md#cache-key) |
 | `checksum` | Generate / verify release checksums for artifact files | [↗](docs/COMMANDS.md#checksum) |
 | `artifact` | Assert artifacts exist and generate size/SHA256 manifests | [↗](docs/COMMANDS.md#artifact) |
+| `archive` | Pack, list, and unpack zip/tar/tar.gz/tar.xz/tar.zst archives | [↗](docs/COMMANDS.md#archive) |
 | `git` | CI-friendly git metadata: ref, SHA, tags, dirty state | [↗](docs/COMMANDS.md#git) |
 | `changelog` | Generate release notes from git commit ranges | [↗](docs/COMMANDS.md#changelog) |
 | `config` | Resolve env-specific config maps; map branches to environments | [↗](docs/COMMANDS.md#config) |
@@ -95,6 +96,7 @@ More end-to-end recipes → **[docs/EXAMPLES.md](docs/EXAMPLES.md)**
 | `json` / `yaml` | Get / set / del / deep-merge / convert / pretty / table on JSON, YAML, TOML, CSV | [↗](docs/COMMANDS.md#json) |
 | `render` | Render Go templates with a sprig-like FuncMap and stacked `--values` files | [↗](docs/COMMANDS.md#render) |
 | `exec` | Unified retry + mask + tee + timeout command runner | [↗](docs/COMMANDS.md#exec) |
+| `http` | Curl-like HTTP requests, JSON extraction, uploads, and chained flows | [↗](docs/COMMANDS.md#http) |
 | `url parse` | Split a URL into `SCHEME / HOST / PORT / USER / PASSWORD / PATH / QUERY` env vars | [↗](docs/COMMANDS.md#url) |
 | `image parse` | Split a container image ref into registry / repository / tag / digest | [↗](docs/COMMANDS.md#image) |
 | `time` | RFC3339 / unix / tag / compact / iso timestamps; format conversion; arithmetic | [↗](docs/COMMANDS.md#time) |

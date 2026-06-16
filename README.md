@@ -1,7 +1,7 @@
 <div align="center">
   <img src="docs/assets/pipekit-wordmark.png" alt="Pipekit — CI/CD pipeline toolkit" width="520">
   <p>
-    <img src="https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat-square&logo=go" alt="Go Version">
+    <img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat-square&logo=go" alt="Go Version">
     <img src="https://img.shields.io/badge/OS-Linux%20%7C%20macOS%20%7C%20Windows-darkblue?style=flat-square&logo=windows" alt="OS Support">
     <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License">
   </p>
@@ -51,6 +51,12 @@ pipekit assert env-exists DEPLOY_TOKEN CLUSTER_NAME IMAGE_TAG
 pipekit wait url http://localhost:8080/healthz --timeout 150s
 pipekit wait grpc localhost:50051 --service my.package.Worker --timeout 60s
 pipekit wait ws ws://localhost:8080/events --timeout 60s
+
+# Request an API and extract JSON without curl+jq
+pipekit http get https://api.example.com/release --expect-status 200 --jq .tag --raw
+
+# Pack cross-platform release archives
+pipekit archive pack dist/app.tar.zst ./bin/app README.md
 
 # Retry a flaky command with exponential backoff
 pipekit retry run --attempts 5 --delay 5s --backoff -- helm upgrade --install myapp ./chart

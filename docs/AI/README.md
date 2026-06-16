@@ -7,7 +7,7 @@ This document provides structured context for AI assistants working with the pip
 | Item | Value |
 |------|-------|
 | **Purpose** | CLI tool replacing bash one-liners in CI/CD pipelines |
-| **Language** | Go 1.24+ |
+| **Language** | Go 1.25+ |
 | **CLI Framework** | `urfave/cli` v1 |
 | **Repository** | https://github.com/AxeForging/pipekit |
 | **License** | MIT |

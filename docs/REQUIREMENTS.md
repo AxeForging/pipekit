@@ -48,7 +48,7 @@ Only relevant if you build from source.
 
 | Tool | Version |
 |---|---|
-| Go | 1.24 or later |
+| Go | 1.25 or later |
 | `make` | Any (used by the Makefile; not required for `go install` / `go build`) |
 | `golangci-lint` | For `make lint` only |
 

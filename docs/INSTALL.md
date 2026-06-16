@@ -83,7 +83,7 @@ Add the directory containing `pipekit.exe` to your `PATH`, or move it to a direc
 
 ## From source
 
-Requires Go 1.24 or later.
+Requires Go 1.25 or later.
 
 ```sh
 go install github.com/AxeForging/pipekit@latest

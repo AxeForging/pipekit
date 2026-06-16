@@ -308,6 +308,12 @@ pipekit assert compare 2.0.0 gt 1.5.0
 # URL returns one of the expected statuses
 pipekit assert url https://api.example.com/health --expected-status 200,204
 
+# gRPC health endpoint reports SERVING
+pipekit assert grpc localhost:50051 --service my.package.Worker
+
+# WebSocket endpoint accepts an upgrade
+pipekit assert ws ws://localhost:8080/events
+
 # Path exists (file or directory)
 pipekit assert path /etc/myapp/config.yaml /var/lib/myapp
 
@@ -404,6 +410,12 @@ pipekit wait url http://localhost:8080/healthz --expected-body "healthy"
 # TCP port
 pipekit wait tcp localhost:5432 --timeout 60s
 
+# gRPC health endpoint
+pipekit wait grpc localhost:50051 --service my.package.Worker --timeout 60s
+
+# WebSocket endpoint
+pipekit wait ws ws://localhost:8080/events --timeout 60s
+
 # Arbitrary command (exit 0 = ready)
 pipekit wait command "pg_isready -h localhost" --timeout 30s --backoff
 
@@ -419,6 +431,8 @@ pipekit wait url http://localhost:8080/healthz --quiet
 | `--quiet` | Suppress per-attempt output | `false` |
 | `--expected-status` | Acceptable HTTP codes (csv) | `200` |
 | `--expected-body` | Substring to look for in response body | — |
+| `--service` | gRPC health service name | — |
+| `--tls` | Use TLS for gRPC health checks | `false` |
 
 </details>
 

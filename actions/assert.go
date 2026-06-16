@@ -132,6 +132,52 @@ func AssertCommand() cli.Command {
 				},
 			},
 			{
+				Name:      "grpc",
+				Usage:     "assert a gRPC health endpoint reports SERVING",
+				ArgsUsage: "HOST:PORT",
+				Flags: []cli.Flag{
+					cli.StringFlag{Name: "service", Usage: "gRPC health service name"},
+					cli.StringFlag{Name: "timeout", Value: "10s", Usage: "request timeout"},
+					cli.BoolFlag{Name: "tls", Usage: "use TLS for the gRPC connection"},
+				},
+				Action: func(c *cli.Context) error {
+					address := c.Args().First()
+					if address == "" {
+						return cli.NewExitError("address (host:port) required", 1)
+					}
+					timeout, err := time.ParseDuration(c.String("timeout"))
+					if err != nil {
+						return cli.NewExitError("invalid timeout: "+err.Error(), 1)
+					}
+					if err := services.AssertGRPCHealth(address, c.String("service"), timeout, c.Bool("tls")); err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					return nil
+				},
+			},
+			{
+				Name:      "ws",
+				Usage:     "assert a WebSocket endpoint accepts an upgrade",
+				ArgsUsage: "WS_URL",
+				Flags: []cli.Flag{
+					cli.StringFlag{Name: "timeout", Value: "10s", Usage: "request timeout"},
+				},
+				Action: func(c *cli.Context) error {
+					urlStr := c.Args().First()
+					if urlStr == "" {
+						return cli.NewExitError("WebSocket URL required", 1)
+					}
+					timeout, err := time.ParseDuration(c.String("timeout"))
+					if err != nil {
+						return cli.NewExitError("invalid timeout: "+err.Error(), 1)
+					}
+					if err := services.AssertWebSocket(urlStr, timeout); err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					return nil
+				},
+			},
+			{
 				Name:      "path",
 				Usage:     "assert one or more paths exist (file or directory)",
 				ArgsUsage: "PATH1 PATH2 ...",

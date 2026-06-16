@@ -1184,6 +1184,8 @@ pipekit http post https://uploads.example.com/artifacts \
 pipekit http chain flow.yaml --expect-status 200 --verbose
 ```
 
+`http chain` runs each step in order. Values captured from a response body with jq-style paths are stored as variables, then reused in later `url`, `headers`, `data`, and `json` fields with `{{name}}` interpolation. The command prints JSON containing final `vars` and per-step status codes.
+
 `flow.yaml`:
 
 ```yaml

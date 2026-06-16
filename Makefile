@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-integration lint tidy version release-check
+.PHONY: all build clean test test-integration vuln lint tidy version release-check
 
 GOOS_ARCH := linux/amd64 linux/arm64 linux/386 linux/arm darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 windows/386
 DIST_DIR := dist
@@ -50,6 +50,11 @@ test-integration: build
 	go test ./integration/... -v
 	@echo "Integration tests passed."
 
+vuln:
+	@echo "Running govulncheck..."
+	govulncheck ./...
+	@echo "No called vulnerabilities found."
+
 lint:
 	@echo "Running linter..."
 	golangci-lint run --timeout=5m
@@ -76,7 +81,7 @@ tag:
 	git tag -a $(VERSION) -m "Release $(VERSION)"
 	@echo "Tag created. Push with: git push origin $(VERSION)"
 
-release-check: test-integration
+release-check: test-integration vuln
 	@echo "Running tests..."
 	go test ./...
 	@echo "All tests passed. Ready for release $(VERSION)"

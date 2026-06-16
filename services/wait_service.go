@@ -118,6 +118,78 @@ func WaitForTCP(ctx context.Context, address string, interval time.Duration, bac
 	}
 }
 
+// WaitForGRPCHealth polls the standard gRPC health service until it reports SERVING.
+func WaitForGRPCHealth(ctx context.Context, address string, serviceName string, interval time.Duration, backoff bool, quiet bool, useTLS bool) error {
+	attempt := 0
+	delay := interval
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for gRPC %s", address)
+		default:
+		}
+
+		attempt++
+		if err := AssertGRPCHealth(address, serviceName, 5*time.Second, useTLS); err == nil {
+			if !quiet {
+				helpers.Log.Info().Msgf("gRPC %s is ready (attempt %d)", address, attempt)
+			}
+			return nil
+		}
+
+		if !quiet {
+			helpers.Log.Info().Msgf("Waiting for gRPC %s (attempt %d)...", address, attempt)
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for gRPC %s after %d attempts", address, attempt)
+		case <-time.After(delay):
+		}
+
+		if backoff {
+			delay = delay * 2
+		}
+	}
+}
+
+// WaitForWebSocket polls a WebSocket endpoint until it accepts an upgrade.
+func WaitForWebSocket(ctx context.Context, urlStr string, interval time.Duration, backoff bool, quiet bool) error {
+	attempt := 0
+	delay := interval
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for WebSocket %s", urlStr)
+		default:
+		}
+
+		attempt++
+		if err := AssertWebSocket(urlStr, 5*time.Second); err == nil {
+			if !quiet {
+				helpers.Log.Info().Msgf("WebSocket %s is ready (attempt %d)", urlStr, attempt)
+			}
+			return nil
+		}
+
+		if !quiet {
+			helpers.Log.Info().Msgf("Waiting for WebSocket %s (attempt %d)...", urlStr, attempt)
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for WebSocket %s after %d attempts", urlStr, attempt)
+		case <-time.After(delay):
+		}
+
+		if backoff {
+			delay = delay * 2
+		}
+	}
+}
+
 // WaitForCommand retries a shell command until it exits 0.
 func WaitForCommand(ctx context.Context, command string, interval time.Duration, backoff bool, quiet bool) error {
 	attempt := 0

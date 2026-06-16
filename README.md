@@ -49,6 +49,8 @@ pipekit assert env-exists DEPLOY_TOKEN CLUSTER_NAME IMAGE_TAG
 
 # Wait for a service to be ready
 pipekit wait url http://localhost:8080/healthz --timeout 150s
+pipekit wait grpc localhost:50051 --service my.package.Worker --timeout 60s
+pipekit wait ws ws://localhost:8080/events --timeout 60s
 
 # Retry a flaky command with exponential backoff
 pipekit retry run --attempts 5 --delay 5s --backoff -- helm upgrade --install myapp ./chart

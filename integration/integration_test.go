@@ -8,6 +8,8 @@ package integration
 import (
 	"bytes"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -482,6 +484,144 @@ func TestE2E_ChecksumAndArtifact(t *testing.T) {
 		t.Fatalf("artifact manifest exit %d", code)
 	}
 	expectAll(t, stdout, `"path"`, `"size"`, `"sha256"`)
+}
+
+func TestE2E_HTTPGetAndChain(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/release":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tag":"v1.2.3"}`))
+		case "/token":
+			if r.Method != http.MethodPost {
+				t.Fatalf("token method = %s", r.Method)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"abc123"}`))
+		case "/deploys/abc123":
+			if got := r.Header.Get("Authorization"); got != "Bearer abc123" {
+				t.Fatalf("Authorization = %q", got)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":42}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	stdout, stderr, code := runPipekit(t,
+		[]string{"http", "get", srv.URL + "/release", "--expect-status", "200", "--jq", ".tag", "--raw"}, "")
+	if code != 0 {
+		t.Fatalf("http get exit %d stderr=%s", code, stderr)
+	}
+	if strings.TrimSpace(stdout) != "v1.2.3" {
+		t.Fatalf("http get stdout = %q", stdout)
+	}
+
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "flow.yaml")
+	body := fmt.Sprintf(`steps:
+  - name: auth
+    method: POST
+    url: %s/token
+    json: '{"client":"ci"}'
+    expectStatus: [200]
+    capture:
+      token: .access_token
+  - name: deploy
+    method: POST
+    url: %s/deploys/{{token}}
+    headers:
+      Authorization: Bearer {{token}}
+    json: '{"ref":"main"}'
+    expectStatus: [201]
+    capture:
+      deploy_id: .id
+`, srv.URL, srv.URL)
+	if err := os.WriteFile(plan, []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Plain file-backed chain plan.
+	stdout, stderr, code = runPipekit(t,
+		[]string{"http", "chain", plan, "--expect-status", "200", "--verbose"}, "")
+	if code != 0 {
+		t.Fatalf("http chain exit %d stderr=%s stdout=%s", code, stderr, stdout)
+	}
+	expectAll(t, stdout, `"token": "abc123"`, `"deploy_id": "42"`, `"statusCode": 201`)
+	expectAll(t, stderr, "auth: HTTP 200", "deploy: HTTP 201")
+
+	// Heredoc/stdin-style chain plan (`pipekit http chain - <<'YAML'`).
+	stdout, stderr, code = runPipekit(t,
+		[]string{"http", "chain", "-", "--expect-status", "200"}, body)
+	if code != 0 {
+		t.Fatalf("http chain stdin exit %d stderr=%s stdout=%s", code, stderr, stdout)
+	}
+	expectAll(t, stdout, `"token": "abc123"`, `"deploy_id": "42"`, `"statusCode": 201`)
+}
+
+func TestE2E_HTTPChainRejectsEmptyStdinPlan(t *testing.T) {
+	_, stderr, code := runPipekit(t,
+		[]string{"http", "chain", "-"}, "   \n")
+	if code == 0 {
+		t.Fatal("expected empty stdin plan to fail")
+	}
+	if !strings.Contains(stderr, "empty HTTP chain plan on stdin") {
+		t.Fatalf("stderr = %q", stderr)
+	}
+}
+
+func TestE2E_HTTPRejectsInvalidExpectedStatus(t *testing.T) {
+	_, stderr, code := runPipekit(t,
+		[]string{"http", "get", "http://127.0.0.1", "--expect-status", "nope"}, "")
+	if code == 0 {
+		t.Fatal("expected invalid status to fail")
+	}
+	if !strings.Contains(stderr, "invalid status code") {
+		t.Fatalf("stderr = %q", stderr)
+	}
+}
+
+func TestE2E_ArchivePackListUnpack(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	if err := os.MkdirAll(filepath.Join(src, "nested"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "nested", "file.txt"), []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	archive := filepath.Join(dir, "bundle.tar.zst")
+	_, stderr, code := runPipekit(t,
+		[]string{"archive", "pack", archive, src}, "")
+	if code != 0 {
+		t.Fatalf("archive pack exit %d stderr=%s", code, stderr)
+	}
+
+	stdout, stderr, code := runPipekit(t,
+		[]string{"archive", "list", archive}, "")
+	if code != 0 {
+		t.Fatalf("archive list exit %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "src/nested/file.txt") {
+		t.Fatalf("archive list stdout = %q", stdout)
+	}
+
+	dest := filepath.Join(dir, "out")
+	_, stderr, code = runPipekit(t,
+		[]string{"archive", "unpack", archive, "--dest", dest, "--strip-components", "1"}, "")
+	if code != 0 {
+		t.Fatalf("archive unpack exit %d stderr=%s", code, stderr)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "nested", "file.txt"))
+	if err != nil {
+		t.Fatalf("read unpacked file: %v", err)
+	}
+	if string(got) != "hello" {
+		t.Fatalf("unpacked content = %q", got)
+	}
 }
 
 func TestE2E_GitAndChangelog(t *testing.T) {

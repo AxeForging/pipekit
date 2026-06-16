@@ -19,7 +19,7 @@ Working on pipekit itself. For an architectural deep-dive aimed at AI assistants
 
 | Tool | Version |
 |---|---|
-| Go | 1.24+ |
+| Go | 1.25+ |
 | `make` | any |
 | `golangci-lint` | for `make lint` |
 | `git` | for runtime tests of `diff` / `version next` |

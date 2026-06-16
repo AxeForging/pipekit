@@ -18,6 +18,7 @@ Full reference for every pipekit command and flag. For end-to-end pipeline recip
 - [`cache-key`](#cache-key) — deterministic cache keys
 - [`checksum`](#checksum) — release checksums
 - [`artifact`](#artifact) — artifact manifests and assertions
+- [`archive`](#archive) — archive pack/list/unpack
 - [`git`](#git) — CI-friendly git metadata
 - [`changelog`](#changelog) — release notes from git history
 - [`config`](#config) — environment configuration
@@ -25,6 +26,7 @@ Full reference for every pipekit command and flag. For end-to-end pipeline recip
 - [`json` / `yaml`](#json) — read · query · mutate · merge · convert · pretty · table
 - [`render`](#render) — file templating with sprig-like funcs
 - [`exec`](#exec) — unified retry + mask + tee + timeout runner
+- [`http`](#http) — curl-like HTTP requests and chains
 - [`url`](#url) — URL parsing
 - [`image`](#image) — container image ref parsing
 - [`time`](#time) — timestamps, formatting, arithmetic
@@ -637,6 +639,41 @@ pipekit artifact manifest "dist/pipekit-*" --pretty --output dist/artifacts.json
 
 ---
 
+## archive
+
+Create, inspect, and extract archives without depending on platform-specific `tar`, `zip`, `xz`, or `zstd` installs.
+
+<details>
+<summary><strong>Examples</strong></summary>
+
+```sh
+# Pack release files
+pipekit archive pack dist/app.tar.zst ./bin/app README.md
+
+# Maximum compression release archive
+pipekit archive pack dist/source.tar.xz ./src ./go.mod
+
+# Windows-friendly archive
+pipekit archive pack dist/app.zip ./bin/app.exe README.md
+
+# Inspect and unpack
+pipekit archive list dist/app.tar.zst
+pipekit archive list dist/app.zip --json
+pipekit archive unpack dist/app.tar.zst --dest ./tmp --strip-components 1
+```
+
+| Subcommand | Description |
+|---|---|
+| `archive pack OUTPUT INPUT...` | Create an archive from files/directories |
+| `archive list ARCHIVE` | List entries, optionally as JSON |
+| `archive unpack ARCHIVE` | Extract entries safely to a destination |
+
+Supported formats: `zip`, `tar`, `tar.gz`, `tar.xz`, `tar.zst`. Formats are detected from filenames unless `--format` is set.
+
+</details>
+
+---
+
 ## git
 
 Read git metadata in formats that are easy to pass between CI steps.
@@ -1115,6 +1152,100 @@ pipekit exec --attempts 4 --delay 10s --retry-on-stderr "rate limit|429" \
 
 ---
 
+## http
+
+Run curl-like HTTP(S) requests with retries, status checks, JSON extraction, and chained captures.
+
+<details>
+<summary><strong>Examples</strong></summary>
+
+```sh
+# GET and extract JSON without jq
+pipekit http get https://api.example.com/releases/latest \
+  --expect-status 200 \
+  --jq .tag_name \
+  --raw \
+  --to-github-output tag
+
+# POST JSON with retries
+pipekit http post https://api.example.com/deploys \
+  --header "Authorization: Bearer $TOKEN" \
+  --json '{"ref":"main"}' \
+  --expect-status 201 \
+  --retry 3 \
+  --backoff
+
+# Multipart upload
+pipekit http post https://uploads.example.com/artifacts \
+  --file artifact=dist/app.tar.zst \
+  --expect-status 200
+
+# Chain dependent requests with captures and interpolation
+pipekit http chain flow.yaml --expect-status 200 --verbose
+
+# The same plan can be passed inline with a heredoc
+pipekit http chain - --expect-status 200 <<'YAML'
+steps:
+  - name: auth
+    method: POST
+    url: https://api.example.com/token
+    json: '{"client":"ci"}'
+    capture:
+      token: .access_token
+  - name: deploy
+    method: POST
+    url: https://api.example.com/deploys/{{token}}
+    headers:
+      Authorization: Bearer {{token}}
+    json: '{"ref":"main"}'
+    expectStatus: [201]
+YAML
+```
+
+`http chain` runs each step in order. Pass a plan file, or use `-` to read a JSON/YAML plan from stdin. Values captured from a response body with jq-style paths are stored as variables, then reused in later `url`, `headers`, `data`, and `json` fields with `{{name}}` interpolation. The command prints JSON containing final `vars` and per-step status codes.
+
+`flow.yaml`:
+
+```yaml
+steps:
+  - name: auth
+    method: POST
+    url: https://api.example.com/token
+    json: '{"client":"ci"}'
+    expectStatus: [200]
+    capture:
+      token: .access_token
+  - name: deploy
+    method: POST
+    url: https://api.example.com/deploys/{{token}}
+    headers:
+      Authorization: Bearer {{token}}
+    json: '{"ref":"main"}'
+    expectStatus: [201]
+    capture:
+      deploy_id: .id
+```
+
+| Flag | Description |
+|---|---|
+| `--header, -H` | Request header as `Name: value` |
+| `--data`, `--data-file` | Raw body inline or from a file |
+| `--json`, `--json-file` | JSON body inline or from a file |
+| `--form, -F` | URL-encoded form field as `key=value` |
+| `--file` | Multipart file field as `name=path` |
+| `--expect-status` | Comma-separated acceptable status codes |
+| `--jq` | Extract a jq-style path from response JSON |
+| `--raw, -r` | Print extracted strings without JSON quotes |
+| `--output, -o` | Write response or extracted value to a file |
+| `--to-github-output` | Write response or chain JSON to `$GITHUB_OUTPUT` |
+| `--retry`, `--retry-delay`, `--backoff` | Retry controls |
+| `--insecure, -k` | Skip TLS certificate verification |
+| `--verbose, -v` | Print status/headers or chain step statuses to stderr |
+
+</details>
+
+---
+
 ## url
 
 ```sh
@@ -1203,7 +1334,7 @@ Diagnose pipekit's runtime environment — CI platform detection, expected env v
 pipekit doctor
 # [platform]
 # · ci platform            github-actions
-# · go runtime             go1.24.6 linux/amd64
+# · go runtime             go1.25.11 linux/amd64
 #
 # [tools]
 # ✓ git on PATH

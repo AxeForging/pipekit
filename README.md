@@ -1,7 +1,7 @@
 <div align="center">
   <img src="docs/assets/pipekit-wordmark.png" alt="Pipekit — CI/CD pipeline toolkit" width="520">
   <p>
-    <img src="https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat-square&logo=go" alt="Go Version">
+    <img src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat-square&logo=go" alt="Go Version">
     <img src="https://img.shields.io/badge/OS-Linux%20%7C%20macOS%20%7C%20Windows-darkblue?style=flat-square&logo=windows" alt="OS Support">
     <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License">
   </p>
@@ -52,6 +52,12 @@ pipekit wait url http://localhost:8080/healthz --timeout 150s
 pipekit wait grpc localhost:50051 --service my.package.Worker --timeout 60s
 pipekit wait ws ws://localhost:8080/events --timeout 60s
 
+# Request an API and extract JSON without curl+jq
+pipekit http get https://api.example.com/release --expect-status 200 --jq .tag --raw
+
+# Pack cross-platform release archives
+pipekit archive pack dist/app.tar.zst ./bin/app README.md
+
 # Retry a flaky command with exponential backoff
 pipekit retry run --attempts 5 --delay 5s --backoff -- helm upgrade --install myapp ./chart
 
@@ -81,6 +87,7 @@ More end-to-end recipes → **[docs/EXAMPLES.md](docs/EXAMPLES.md)**
 | `cache-key` | Deterministic SHA256 cache keys from files / globs / composite parts | [↗](docs/COMMANDS.md#cache-key) |
 | `checksum` | Generate / verify release checksums for artifact files | [↗](docs/COMMANDS.md#checksum) |
 | `artifact` | Assert artifacts exist and generate size/SHA256 manifests | [↗](docs/COMMANDS.md#artifact) |
+| `archive` | Pack, list, and unpack zip/tar/tar.gz/tar.xz/tar.zst archives | [↗](docs/COMMANDS.md#archive) |
 | `git` | CI-friendly git metadata: ref, SHA, tags, dirty state | [↗](docs/COMMANDS.md#git) |
 | `changelog` | Generate release notes from git commit ranges | [↗](docs/COMMANDS.md#changelog) |
 | `config` | Resolve env-specific config maps; map branches to environments | [↗](docs/COMMANDS.md#config) |
@@ -89,6 +96,7 @@ More end-to-end recipes → **[docs/EXAMPLES.md](docs/EXAMPLES.md)**
 | `json` / `yaml` | Get / set / del / deep-merge / convert / pretty / table on JSON, YAML, TOML, CSV | [↗](docs/COMMANDS.md#json) |
 | `render` | Render Go templates with a sprig-like FuncMap and stacked `--values` files | [↗](docs/COMMANDS.md#render) |
 | `exec` | Unified retry + mask + tee + timeout command runner | [↗](docs/COMMANDS.md#exec) |
+| `http` | Curl-like HTTP requests, JSON extraction, uploads, and chained flows | [↗](docs/COMMANDS.md#http) |
 | `url parse` | Split a URL into `SCHEME / HOST / PORT / USER / PASSWORD / PATH / QUERY` env vars | [↗](docs/COMMANDS.md#url) |
 | `image parse` | Split a container image ref into registry / repository / tag / digest | [↗](docs/COMMANDS.md#image) |
 | `time` | RFC3339 / unix / tag / compact / iso timestamps; format conversion; arithmetic | [↗](docs/COMMANDS.md#time) |

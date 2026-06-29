@@ -94,6 +94,182 @@ func TestSetYAMLPreserving_AddsNewKey(t *testing.T) {
 	}
 }
 
+// TestSetYAMLPreserving_InsertKeepsMultilineFlowStyle reproduces the original
+// regression: inserting a new scalar key must NOT collapse multi-line flow-style
+// collections ([ ... ] / { ... } spread across lines) elsewhere in the document.
+// The whole file outside the single inserted line stays byte-for-byte identical.
+func TestSetYAMLPreserving_InsertKeepsMultilineFlowStyle(t *testing.T) {
+	in := []byte("deployment:\n" +
+		"  args: [\n" +
+		"    '--config',\n" +
+		"    '/etc/app.yaml',\n" +
+		"    '--verbose'\n" +
+		"  ]\n" +
+		"  annotations: {\n" +
+		"    team: platform,\n" +
+		"    tier: backend\n" +
+		"  }\n" +
+		"image:\n" +
+		"  repository: myapp\n")
+	want := "deployment:\n" +
+		"  args: [\n" +
+		"    '--config',\n" +
+		"    '/etc/app.yaml',\n" +
+		"    '--verbose'\n" +
+		"  ]\n" +
+		"  annotations: {\n" +
+		"    team: platform,\n" +
+		"    tier: backend\n" +
+		"  }\n" +
+		"image:\n" +
+		"  repository: myapp\n" +
+		"  tag: v1.4.0\n"
+	out, err := setYAMLPreserving(in, ".image.tag", "v1.4.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != want {
+		t.Errorf("multi-line flow style not preserved on insert:\ngot:\n%q\nwant:\n%q", out, want)
+	}
+}
+
+// TestSetYAMLPreserving_InsertByteForByte covers blank lines, comment column
+// alignment and quoting around the insertion point.
+func TestSetYAMLPreserving_InsertByteForByte(t *testing.T) {
+	in := []byte("# Chart values\n" +
+		"image:\n" +
+		"  repository: myapp     # registry path\n" +
+		"\n" +
+		"replicas: 3\n")
+	want := "# Chart values\n" +
+		"image:\n" +
+		"  repository: myapp     # registry path\n" +
+		"  tag: v2.0.0\n" +
+		"\n" +
+		"replicas: 3\n"
+	out, err := setYAMLPreserving(in, ".image.tag", "v2.0.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != want {
+		t.Errorf("insert not byte-for-byte:\ngot:\n%q\nwant:\n%q", out, want)
+	}
+}
+
+func TestSetYAMLPreserving_InsertTopLevelKey(t *testing.T) {
+	in := []byte("a: 1\nb: 2\n")
+	want := "a: 1\nb: 2\nc: 3\n"
+	out, err := setYAMLPreserving(in, ".c", float64(3))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != want {
+		t.Errorf("got %q want %q", out, want)
+	}
+}
+
+func TestSetYAMLPreserving_InsertNoTrailingNewline(t *testing.T) {
+	in := []byte("image:\n  repository: myapp")
+	want := "image:\n  repository: myapp\n  tag: v1\n"
+	out, err := setYAMLPreserving(in, ".image.tag", "v1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != want {
+		t.Errorf("got %q want %q", out, want)
+	}
+}
+
+// A string that YAML would otherwise read as a bool/number must be quoted on
+// insert so it round-trips as a string.
+func TestSetYAMLPreserving_InsertQuotesAmbiguousString(t *testing.T) {
+	in := []byte("flags:\n  verbose: true\n")
+	out, err := setYAMLPreserving(in, ".flags.enabled", "yes")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := string(out)
+	if !strings.Contains(got, "enabled: \"yes\"") {
+		t.Errorf("ambiguous string not quoted on insert: %q", got)
+	}
+	if !yamlPathHasValue(out, ".flags.enabled", "yes") {
+		t.Errorf("inserted value does not round-trip as string: %q", got)
+	}
+}
+
+// Inserting into a deeper block must not disturb a multi-line flow sibling that
+// comes after it in the document.
+func TestSetYAMLPreserving_InsertBeforeFlowSibling(t *testing.T) {
+	in := []byte("image:\n" +
+		"  repository: myapp\n" +
+		"ports: [\n" +
+		"  8080,\n" +
+		"  9090\n" +
+		"]\n")
+	want := "image:\n" +
+		"  repository: myapp\n" +
+		"  tag: v1\n" +
+		"ports: [\n" +
+		"  8080,\n" +
+		"  9090\n" +
+		"]\n"
+	out, err := setYAMLPreserving(in, ".image.tag", "v1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != want {
+		t.Errorf("got:\n%q\nwant:\n%q", out, want)
+	}
+}
+
+// When an intermediate map is missing too, the whole missing tail is created as
+// a nested block — and unrelated multi-line flow style is still left untouched.
+func TestSetYAMLPreserving_InsertCreatesNestedBlock(t *testing.T) {
+	in := []byte("service:\n" +
+		"  ports: [\n" +
+		"    80,\n" +
+		"    443\n" +
+		"  ]\n")
+	want := "service:\n" +
+		"  ports: [\n" +
+		"    80,\n" +
+		"    443\n" +
+		"  ]\n" +
+		"image:\n" +
+		"  tag: v1.4.0\n"
+	out, err := setYAMLPreserving(in, ".image.tag", "v1.4.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != want {
+		t.Errorf("nested create not surgical:\ngot:\n%q\nwant:\n%q", out, want)
+	}
+}
+
+func TestSetYAMLPreserving_InsertCreatesDeepNestedBlock(t *testing.T) {
+	in := []byte("name: app\n")
+	want := "name: app\n" +
+		"a:\n" +
+		"  b:\n" +
+		"    c: 5\n"
+	out, err := setYAMLPreserving(in, ".a.b.c", float64(5))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(out) != want {
+		t.Errorf("deep nested create not surgical:\ngot:\n%q\nwant:\n%q", out, want)
+	}
+}
+
+// Indexing through a scalar is impossible; the surgical path must defer to the
+// fallback, which surfaces the error rather than producing wrong output.
+func TestSetYAMLPreserving_InsertUnderScalarErrors(t *testing.T) {
+	in := []byte("image: myapp\n")
+	if _, err := setYAMLPreserving(in, ".image.tag", "v1"); err == nil {
+		t.Fatal("expected error inserting under a scalar value")
+	}
+}
+
 func TestSetYAMLPreserving_RejectsIndexIntoScalar(t *testing.T) {
 	in := []byte("tag: v1.0.0\n")
 	if _, err := setYAMLPreserving(in, ".tag.inner", "x"); err == nil {

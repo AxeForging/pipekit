@@ -68,8 +68,14 @@ func setYAMLPreserving(data []byte, path string, value interface{}) ([]byte, err
 	if out, ok := tryYAMLScalarSplice(data, parts, value, path); ok {
 		return out, nil
 	}
-	// Fallback (new keys, nested creation, complex values, multiline scalars):
-	// node re-encode. This normalizes formatting but always produces valid YAML.
+	// Surgical insert: a new scalar key added to an existing block mapping →
+	// splice one line, leaving every other byte (including multi-line flow style
+	// and blank lines elsewhere) untouched.
+	if out, ok := tryYAMLInsert(data, parts, value, path); ok {
+		return out, nil
+	}
+	// Fallback (nested creation, complex values, multiline scalars): node
+	// re-encode. This normalizes formatting but always produces valid YAML.
 	return setYAMLNodeEncode(data, parts, value)
 }
 
@@ -122,6 +128,167 @@ func tryYAMLScalarSplice(data []byte, parts []string, value interface{}, path st
 		return nil, false
 	}
 	return out, true
+}
+
+// tryYAMLInsert adds a new value by splicing freshly-built lines into the
+// original bytes. It anchors at the deepest existing block-style mapping along
+// the path and appends the missing tail (a single leaf key, or a nested block
+// when intermediate maps are missing too). Unlike the node re-encode fallback it
+// never reformats the rest of the document, so multi-line flow collections,
+// blank lines, comments and quoting elsewhere stay byte-for-byte identical.
+//
+// Returns false (defer to fallback) for anything it cannot do surgically:
+// non-scalar values, multi-line scalars, or no existing block-mapping anchor
+// (e.g. a flow-style or empty parent, or indexing into a scalar).
+func tryYAMLInsert(data []byte, parts []string, value interface{}, path string) ([]byte, bool) {
+	if !isScalarValue(value) {
+		return nil, false
+	}
+	valText, ok := yamlScalarToken(value)
+	if !ok {
+		return nil, false
+	}
+	top, ok := yamlTopNode(data)
+	if !ok {
+		return nil, false
+	}
+
+	// Find the deepest existing block mapping whose next path segment is absent;
+	// the remaining segments (>=1) become the inserted tail. Searching deepest
+	// first means a present leaf-parent yields a one-line insert.
+	anchor, tail, indentCol, ok := yamlInsertAnchor(top, parts)
+	if !ok {
+		return nil, false
+	}
+
+	firstKey := anchor.Content[0]
+	starts := lineStarts(data)
+	if firstKey.Line < 1 || firstKey.Line > len(starts) {
+		return nil, false
+	}
+	// Walk the mapping's lines to find the last one that belongs to it: blank
+	// and deeper-indented lines belong; the first line dedented past the key
+	// column ends the block. We insert right after the last belonging content
+	// line, so trailing blank lines stay below the new entry.
+	lastContent := 0
+	for ln := firstKey.Line; ln <= len(starts); ln++ {
+		s := starts[ln-1]
+		e := len(data)
+		if ln < len(starts) {
+			e = starts[ln]
+		}
+		lineCol, blank := firstNonSpaceCol(data[s:e])
+		if blank {
+			continue
+		}
+		if lineCol < indentCol {
+			break // dedent: belongs to an ancestor mapping
+		}
+		lastContent = ln
+	}
+	if lastContent == 0 {
+		return nil, false
+	}
+
+	insertOff := len(data)
+	if lastContent < len(starts) {
+		insertOff = starts[lastContent]
+	}
+	prefix := ""
+	if insertOff == len(data) && len(data) > 0 && data[len(data)-1] != '\n' {
+		prefix = "\n"
+	}
+	entry := prefix + buildYAMLBlock(tail, indentCol, valText)
+	out := splice(data, insertOff, insertOff, []byte(entry))
+	// Validate: a wrong insertion point would put the value at the wrong path (or
+	// break parsing); confirm the value now resolves at the requested path.
+	if !yamlPathHasValue(out, path, value) {
+		return nil, false
+	}
+	return out, true
+}
+
+// yamlInsertAnchor returns the deepest block-style mapping along parts whose
+// next segment is missing, the remaining (missing) path segments, and the
+// 1-based column at which that mapping's keys sit. ok is false when no such
+// anchor exists (so the surgical insert is impossible).
+func yamlInsertAnchor(top *yaml.Node, parts []string) (anchor *yaml.Node, tail []string, indentCol int, ok bool) {
+	for d := len(parts) - 1; d >= 0; d-- {
+		node, found := findYAMLValueNode(top, parts[:d])
+		if !found {
+			continue
+		}
+		if node.Kind != yaml.MappingNode || node.Style == yaml.FlowStyle || len(node.Content) == 0 {
+			continue
+		}
+		if mappingHasKey(node, parts[d]) {
+			// The next segment already exists; we can't insert it here. A deeper
+			// anchor was already tried, so this path can't be done surgically.
+			return nil, nil, 0, false
+		}
+		return node, parts[d:], node.Content[0].Column, true
+	}
+	return nil, nil, 0, false
+}
+
+func mappingHasKey(node *yaml.Node, key string) bool {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return true
+		}
+	}
+	return false
+}
+
+// buildYAMLBlock renders tail (>=1 map keys) as a block-style YAML fragment
+// indented to baseCol (1-based), with valText as the innermost scalar. Nested
+// levels add 2 spaces each, matching the encoder's default indent.
+func buildYAMLBlock(tail []string, baseCol int, valText string) string {
+	var b strings.Builder
+	for i, seg := range tail {
+		b.WriteString(strings.Repeat(" ", baseCol-1+i*2))
+		b.WriteString(seg)
+		if i == len(tail)-1 {
+			b.WriteString(": ")
+			b.WriteString(valText)
+		} else {
+			b.WriteString(":")
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// yamlScalarToken renders value as a single-line YAML scalar token (with the
+// minimal quoting yaml.v3 would choose), or false if it cannot be expressed on
+// one line.
+func yamlScalarToken(value interface{}) (string, bool) {
+	b, err := yaml.Marshal(value)
+	if err != nil {
+		return "", false
+	}
+	s := strings.TrimRight(string(b), "\n")
+	if strings.ContainsAny(s, "\n\r") {
+		return "", false // block scalar / multi-line: not a single-line insert
+	}
+	return s, true
+}
+
+// firstNonSpaceCol returns the 1-based column of the first non-space character
+// on a line, and whether the line is blank (only spaces/tabs, ignoring the
+// trailing newline).
+func firstNonSpaceCol(line []byte) (int, bool) {
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case ' ', '\t':
+			continue
+		case '\n', '\r':
+			return 0, true
+		default:
+			return i + 1, false
+		}
+	}
+	return 0, true
 }
 
 func tryYAMLLeafDelete(data []byte, parts []string, path string) ([]byte, bool) {
